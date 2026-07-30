@@ -1,0 +1,17 @@
+{
+  "id": "ship-sample-data",
+  "task_type": "ship",
+  "task": "Create sample data for a data pipeline use case that aligns with small-project-growable research. Create datasets: events, users, products, etc. as JSON and CSV in worktree, with schema docs. Use case: e-commerce clickstream + purchases.",
+  "status": "DONE",
+  "created_at": "2026-07-30T18:54:17Z",
+  "updated_at": "2026-07-30T18:54:23Z",
+  "worktree_path": "/Users/ajez/AAI/.orchestrator/worktrees/ship-sample-data",
+  "branch": "crew/ship-sample-data",
+  "tmux_session": "crew-ship-sample-data",
+  "tmux_pane": "%2",
+  "adapter": "generic",
+  "pid": 74861,
+  "exit_code": 0,
+  "output_path": ".orchestrator/crew/ship-sample-data/output.md",
+  "base_ref": "main"
+}

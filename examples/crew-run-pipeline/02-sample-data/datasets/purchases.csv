@@ -1,0 +1,39 @@
+purchase_id,user_id,user_email,user_country,user_tier,product_id,product_name,category,unit_price,quantity,total_amount,timestamp,session_id,device,referrer
+pur_00001,user_0001,mason.johnson760@example.com,US,standard,prod_0006,Smart Watch,Electronics,135.81,1,135.81,2026-07-23T17:35:58+00:00,sess_00002,mobile,instagram
+pur_00002,user_0082,aria.moore785@example.com,BR,free,prod_0015,Bluetooth Speaker,Electronics,57.76,1,57.76,2026-07-23T18:52:04+00:00,sess_00095,tablet,instagram
+pur_00003,user_0057,olivia.martin374@example.com,US,free,prod_0029,Athletic Shorts,Apparel,106.19,1,106.19,2026-07-24T00:05:51+00:00,sess_00069,desktop,facebook
+pur_00004,user_0088,carlos.dubois766@example.com,NG,free,prod_0019,Organic Coffee,Grocery,30.36,1,30.36,2026-07-24T01:16:11+00:00,sess_00102,mobile,direct
+pur_00005,user_0042,diego.brown766@example.com,US,free,prod_0001,Board Game,Toys,49.09,1,49.09,2026-07-24T02:31:39+00:00,sess_00055,desktop,instagram
+pur_00006,user_0028,luna.kumar688@example.com,IN,standard,prod_0041,Air Purifier,Home,178.98,1,178.98,2026-07-25T04:32:17+00:00,sess_00038,mobile,email
+pur_00007,user_0028,luna.kumar688@example.com,IN,standard,prod_0029,Athletic Shorts,Apparel,106.19,1,106.19,2026-07-25T05:10:06+00:00,sess_00038,mobile,email
+pur_00008,user_0027,zoe.muller988@example.com,JP,standard,prod_0015,Bluetooth Speaker,Electronics,57.76,3,173.28,2026-07-25T11:33:32+00:00,sess_00035,mobile,google
+pur_00009,user_0004,carlos.anderson460@example.com,AU,free,prod_0019,Organic Coffee,Grocery,30.36,2,60.72,2026-07-26T02:28:45+00:00,sess_00007,mobile,direct
+pur_00010,user_0002,diego.garcia605@example.com,US,free,prod_0022,Winter Jacket,Apparel,102.43,1,102.43,2026-07-26T10:46:49+00:00,sess_00003,desktop,direct
+pur_00011,user_0068,amelia.nguyen442@example.com,NL,standard,prod_0040,Jump Rope,Sports,142.88,1,142.88,2026-07-26T14:26:48+00:00,sess_00080,desktop,google
+pur_00012,user_0028,luna.kumar688@example.com,IN,standard,prod_0003,USB-C Hub,Electronics,201.98,1,201.98,2026-07-26T18:13:12+00:00,sess_00036,mobile,google
+pur_00013,user_0098,mia.martin111@example.com,NL,standard,prod_0005,Soccer Ball,Sports,23.03,1,23.03,2026-07-27T04:44:14+00:00,sess_00115,desktop,direct
+pur_00014,user_0098,mia.martin111@example.com,NL,standard,prod_0029,Athletic Shorts,Apparel,106.19,1,106.19,2026-07-27T05:08:53+00:00,sess_00115,desktop,direct
+pur_00015,user_0009,james.garcia876@example.com,IN,free,prod_0004,Fitness Tracker,Sports,72.74,1,72.74,2026-07-27T05:14:37+00:00,sess_00015,mobile,direct
+pur_00016,user_0026,isabella.rodriguez676@example.com,US,standard,prod_0001,Board Game,Toys,49.09,1,49.09,2026-07-27T05:55:06+00:00,sess_00034,desktop,google
+pur_00017,user_0043,fatima.hernandez59@example.com,MX,free,prod_0010,Almond Butter,Grocery,39.88,2,79.76,2026-07-27T23:21:42+00:00,sess_00057,desktop,facebook
+pur_00018,user_0043,fatima.hernandez59@example.com,MX,free,prod_0049,Green Tea Pack,Grocery,7.11,1,7.11,2026-07-27T23:44:40+00:00,sess_00057,desktop,facebook
+pur_00019,user_0048,sophia.jones551@example.com,US,premium,prod_0040,Jump Rope,Sports,142.88,1,142.88,2026-07-28T02:14:16+00:00,sess_00060,desktop,google
+pur_00020,user_0075,amelia.martinez26@example.com,IT,standard,prod_0007,Cycling Helmet,Sports,52.87,1,52.87,2026-07-28T08:05:35+00:00,sess_00086,desktop,google
+pur_00021,user_0098,mia.martin111@example.com,NL,standard,prod_0026,Water Bottle,Sports,16.37,1,16.37,2026-07-28T08:43:56+00:00,sess_00114,mobile,instagram
+pur_00022,user_0097,aiden.nguyen172@example.com,ZA,standard,prod_0036,Moisturizer,Beauty,13.97,1,13.97,2026-07-28T12:19:49+00:00,sess_00111,mobile,bing
+pur_00023,user_0097,aiden.nguyen172@example.com,ZA,standard,prod_0034,Kitchen Knife Set,Home,54.42,1,54.42,2026-07-28T12:22:21+00:00,sess_00111,mobile,bing
+pur_00024,user_0008,ben.nguyen592@example.com,US,standard,prod_0042,Dumbbell Set,Sports,88.13,2,176.26,2026-07-28T16:10:34+00:00,sess_00014,mobile,direct
+pur_00025,user_0031,olivia.patel73@example.com,US,free,prod_0043,Wool Socks,Apparel,78.66,1,78.66,2026-07-28T20:46:00+00:00,sess_00040,mobile,google
+pur_00026,user_0031,olivia.patel73@example.com,US,free,prod_0035,Sunscreen,Beauty,45.31,1,45.31,2026-07-28T21:17:33+00:00,sess_00040,mobile,google
+pur_00027,user_0095,olivia.johnson973@example.com,MX,standard,prod_0026,Water Bottle,Sports,16.37,2,32.74,2026-07-28T22:28:59+00:00,sess_00107,mobile,direct
+pur_00028,user_0065,chloe.taylor40@example.com,IN,standard,prod_0023,Building Blocks,Toys,28.2,2,56.4,2026-07-28T22:50:54+00:00,sess_00075,tablet,direct
+pur_00029,user_0077,lin.kumar250@example.com,CA,premium,prod_0021,Running Shoes,Apparel,44.71,1,44.71,2026-07-28T23:21:17+00:00,sess_00091,tablet,facebook
+pur_00030,user_0077,lin.kumar250@example.com,CA,premium,prod_0008,LEGO Creator Set,Toys,39.52,2,79.04,2026-07-28T23:23:18+00:00,sess_00091,tablet,facebook
+pur_00031,user_0077,lin.kumar250@example.com,CA,premium,prod_0044,Plush Bear,Toys,59.47,1,59.47,2026-07-28T23:36:06+00:00,sess_00091,tablet,facebook
+pur_00032,user_0042,diego.brown766@example.com,US,free,prod_0023,Building Blocks,Toys,28.2,1,28.2,2026-07-29T09:49:48+00:00,sess_00053,tablet,email
+pur_00033,user_0041,lin.martinez195@example.com,ZA,standard,prod_0014,Coffee Maker,Home,133.18,2,266.36,2026-07-29T15:43:20+00:00,sess_00052,tablet,google
+pur_00034,user_0057,olivia.martin374@example.com,US,free,prod_0033,Linen Shirt,Apparel,34.36,1,34.36,2026-07-29T17:41:36+00:00,sess_00068,desktop,google
+pur_00035,user_0082,aria.moore785@example.com,BR,free,prod_0041,Air Purifier,Home,178.98,1,178.98,2026-07-29T20:49:00+00:00,sess_00096,mobile,google
+pur_00036,user_0099,hans.kumar965@example.com,BR,premium,prod_0045,Denim Jeans,Apparel,69.87,1,69.87,2026-07-29T23:30:03+00:00,sess_00116,mobile,email
+pur_00037,user_0078,sophia.muller225@example.com,UK,free,prod_0048,Face Serum,Beauty,32.21,1,32.21,2026-07-30T07:37:10+00:00,sess_00092,desktop,google
+pur_00038,user_0090,greta.hernandez861@example.com,IT,standard,prod_0001,Board Game,Toys,49.09,1,49.09,2026-07-30T09:08:49+00:00,sess_00104,mobile,google

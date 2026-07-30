@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Pipeline Infrastructure — Research Overview</title>
+<style>
+:root{
+  --bg:#fcfcf9;
+  --bg2:#f3f3ef;
+  --card:#ffffff;
+  --border:#e8e5dc;
+  --border2:#d9d5ca;
+  --text:#171717;
+  --text2:#5a5a52;
+  --text3:#8a8880;
+  --blue:#2563eb;
+  --blue-bg:#eff4ff;
+  --blue-bd:#bfceff;
+  --green:#0f7a3d;
+  --green-bg:#e8f5e9;
+  --green-bd:#a3d9ad;
+  --amber:#9a6700;
+  --amber-bg:#fef3c7;
+  --amber-bd:#f5d48c;
+  --red:#b91c1c;
+  --red-bg:#fef2f2;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --radius: 10px;
+  --radius2: 16px;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
+  --shadow2: 0 8px 30px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:-0.01em;
+}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code, pre{font-family:var(--mono)}
+pre{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;overflow:auto;font-size:13px;line-height:1.5}
+code:not(pre code){background:var(--bg2);border:1px solid var(--border);padding:1px 5px;border-radius:5px;font-size:.88em}
+
+/* Header */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  backdrop-filter: blur(12px);
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  border-bottom:1px solid var(--border);
+}
+.topbar-inner{
+  max-width:1240px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 24px;
+  gap:16px;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.mark{width:28px;height:28px;border-radius:7px;background:#111;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;letter-spacing:-.02em}
+.brand h1{font-size:14px;margin:0;font-weight:600;letter-spacing:-.02em}
+.brand p{margin:0;font-size:11px;color:var(--text3);letter-spacing:.02em;text-transform:uppercase}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{font-size:11px;padding:4px 8px;border-radius:100px;border:1px solid var(--border);background:var(--card);color:var(--text2);font-weight:500}
+.pill.cost{background:var(--blue-bg);border-color:var(--blue-bd);color:var(--blue)}
+.pill.scale{background:var(--green-bg);border-color:var(--green-bd);color:var(--green)}
+
+/* Layout */
+.shell{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:220px 1fr;gap:28px;padding:28px 24px 80px}
+@media(max-width:980px){.shell{grid-template-columns:1fr}.sidenav{display:none!important}}
+
+.sidenav{position:sticky;top:64px;align-self:start}
+.sidenav h4{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin:18px 0 8px;font-weight:600}
+.sidenav a{display:block;padding:6px 10px;margin:1px 0;border-radius:7px;font-size:13px;color:var(--text2);font-weight:450;border:1px solid transparent}
+.sidenav a:hover{background:var(--bg2);color:var(--text);text-decoration:none}
+.sidenav a.active{background:var(--text);color:#fff;border-color:var(--text)}
+
+.content{min-width:0}
+
+/* Hero */
+.hero{border:1px solid var(--border);border-radius:var(--radius2);background:linear-gradient(180deg, var(--card), var(--bg2));padding:32px 32px 28px;box-shadow:var(--shadow)}
+.hero h2{font-size:32px;line-height:1.15;margin:0 0 10px;letter-spacing:-.03em;font-weight:720;max-width:22ch}
+.hero .sub{color:var(--text2);font-size:15px;max-width:62ch;margin:0 0 20px;line-height:1.55}
+.hero-meta{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text3);border-top:1px solid var(--border);padding-top:16px;margin-top:4px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 14px}
+.kpi .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:6px}
+.kpi .value{font-size:18px;font-weight:700;letter-spacing:-.02em}
+.kpi .note{font-size:11px;color:var(--text3);margin-top:2px}
+@media(max-width:700px){.kpis{grid-template-columns:repeat(2,1fr)}.hero{padding:22px} .hero h2{font-size:26px}}
+
+/* Sections */
+.section{margin:36px 0 0}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.section-head h3{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:650}
+.section-head .hint{font-size:12px;color:var(--text3)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.card-pad{padding:20px 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.grid3{grid-template-columns:1fr}}
+
+/* Collapsible */
+details.coll{border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+details.coll + details.coll{margin-top:10px}
+details.coll summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:600;font-size:14px}
+details.coll summary::-webkit-details-marker{display:none}
+details.coll summary .chev{width:20px;height:20px;border-radius:6px;border:1px solid var(--border);display:grid;place-items:center;transition:transform .18s}
+details.coll[open] summary .chev{transform:rotate(90deg)}
+.coll-body{padding:0 18px 18px;border-top:1px solid var(--border);background:color-mix(in srgb, var(--bg2) 60%, var(--card))}
+.coll-body p, .coll-body ul{font-size:13px;color:var(--text2)}
+.coll-body ul{padding-left:18px}
+
+/* Tabs */
+.tabs{display:flex;gap:6px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:999px;width:fit-content}
+.tab{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:540;cursor:pointer;border:1px solid transparent;color:var(--text2);background:transparent;transition:.15s}
+.tab.active{background:var(--card);color:var(--text);border-color:var(--border);box-shadow:0 1px 2px rgba(0,0,0,.06);font-weight:600}
+.tabpanes{margin-top:16px}
+.tabpane{display:none}
+.tabpane.active{display:block}
+
+/* Architecture diagram boxes */
+.arch{position:relative;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;box-shadow:var(--shadow)}
+.arch-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.arch-title b{font-size:13px}
+.arch-title span{font-size:11px;padding:2px 7px;border-radius:999px;background:var(--bg2);border:1px solid var(--border);color:var(--text3)}
+.flow{display:flex;align-items:stretch;gap:0;overflow:auto;padding:6px 0 10px}
+.node{min-width:132px;max-width:152px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;padding:10px 10px 8px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;position:relative}
+.node.ingest{border-left:3px solid var(--blue)}
+.node.store{border-left:3px solid #9a67ff}
+.node.trans{border-left:3px solid #d97706}
+.node.orch{border-left:3px solid #0f7a3d}
+.node.obs{border-left:3px solid #e11d48}
+.node .n-icon{font-size:14px}
+.node .n-title{font-size:12px;font-weight:650;letter-spacing:-.01em;line-height:1.25}
+.node .n-desc{font-size:10.5px;color:var(--text3);line-height:1.35}
+.arrow{width:36px;flex-shrink:0;display:grid;place-items:center;color:var(--text3);font-size:13px;position:relative}
+.arrow::after{content:"";position:absolute;left:8px;right:8px;top:50%;height:1px;background:var(--border2)}
+.arrow span{position:relative;z-index:1;background:var(--card);border:1px solid var(--border);width:20px;height:20px;display:grid;place-items:center;border-radius:50%;font-size:11px}
+
+/* Build vs Buy */
+.table-tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.table-tools input, .table-tools select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:13px;outline:none}
+.table-tools input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-bg)}
+.badge{font-size:10px;font-weight:650;letter-spacing:.06em;padding:3px 7px;border-radius:999px;display:inline-block;text-transform:uppercase}
+.badge.build{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd)}
+.badge.buy{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.badge.hybrid{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+.badge.dont{background:var(--red-bg);color:var(--red);border:1px solid #fecaca}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+table.bb{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+table.bb th{position:sticky;top:0;z-index:2;background:var(--bg2);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);font-weight:600;text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+table.bb td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text2);line-height:1.45}
+table.bb tr:last-child td{border-bottom:none}
+table.bb tr:hover td{background:color-mix(in srgb, var(--bg2) 70%, white)}
+table.bb td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+th.sort-asc::after{content:" ↑"}
+th.sort-desc::after{content:" ↓"}
+
+/* Cost table */
+.cost-table{width:100%;border-collapse:collapse;font-size:13px}
+.cost-table th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.cost-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text2)}
+.cost-table tr:last-child td{border-bottom:none;font-weight:650;color:var(--text)}
+.bar{height:6px;border-radius:999px;background:var(--bg2);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--blue);border-radius:999px}
+
+/* layer cards */
+.layer{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.layer h4{margin:0;font-size:14px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.layer h4 em{font-style:normal;font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid var(--border);background:var(--bg2);color:var(--text3);font-weight:600;letter-spacing:.04em}
+.layer .opts{font-size:12px;color:var(--text2);line-height:1.5}
+.layer .opts li{margin:3px 0}
+.tagrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}
+.tag{font-size:11px;padding:3px 7px;border-radius:999px;background:var(--bg2);border:1px solid var(--border);color:var(--text2)}
+
+/* sample data */
+.entity-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:900px){.entity-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.entity-grid{grid-template-columns:1fr}}
+.entity{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.entity b{font-size:13px;display:block;margin-bottom:6px}
+.entity .meta{font-size:11px;color:var(--text3);margin-bottom:8px}
+.entity ul{margin:0;padding-left:16px;font-size:12px;color:var(--text2);line-height:1.5}
+.tick{width:22px;height:22px;border-radius:999px;display:inline-grid;place-items:center;font-size:12px;margin-right:4px}
+.tick.b{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd)}
+.tick.g{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+
+/* quickstart */
+.stack{background:#0f1115;color:#e8e8e3;border-radius:14px;border:1px solid #22252d;padding:20px;position:relative;overflow:hidden}
+.stack::before{content:"";position:absolute;inset:0;background:radial-gradient(600px 200px at 80% -20%, rgba(96,165,250,.18), transparent), radial-gradient(400px 300px at 10% 120%, rgba(52,211,153,.14), transparent)}
+.stack > *{position:relative}
+.stack h4{margin:0 0 12px;font-size:14px;letter-spacing:-.01em;color:#fff}
+.stack-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:800px){.stack-grid{grid-template-columns:1fr}}
+.stack-item{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px}
+.stack-item .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa0ae;font-weight:600;margin-bottom:4px}
+.stack-item .v{font-size:13px;font-weight:550;color:#fff}
+.stack-item .d{font-size:11px;color:#9aa0ae;margin-top:2px;line-height:1.4}
+
+/* recommendation */
+.rec{display:flex;gap:12px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.rec .icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;font-size:14px}
+.rec p{margin:0;font-size:13px;color:var(--text2);line-height:1.5}
+.rec b{color:var(--text)}
+
+/* footer */
+footer{margin-top:48px;padding:18px 0;border-top:1px solid var(--border);font-size:11px;color:var(--text3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="mark">◍</div>
+      <div>
+        <h1>Pipeline Research — Overview</h1>
+        <p>Scout research · 2026-07-30 · 534 lines distilled</p>
+      </div>
+    </div>
+    <div class="pills">
+      <span class="pill cost">$15/mo → $100k/mo scale</span>
+      <span class="pill scale">0 → 100M+ events/day</span>
+      <span class="pill">Build vs Buy matrix · 29 rows</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="sidenav">
+    <h4>Overview</h4>
+    <a href="#exec" class="active">Executive Summary</a>
+    <a href="#layers">5 Layers Deep Dive</a>
+    <a href="#buildbuy">Build vs Buy Matrix</a>
+    <a href="#stages">Stage Evolution</a>
+    <a href="#cost">Cost & Ops</a>
+    <a href="#sample">Sample Data Use Case</a>
+    <a href="#recs">Recommendations</a>
+    <a href="#quick">Quick-start Stack</a>
+    <h4>Reference</h4>
+    <a href="#antipatterns">Anti-patterns</a>
+    <a href="#vendors">Vendors 2026</a>
+  </nav>
+
+  <main class="content">
+
+    <!-- HERO -->
+    <div class="hero" id="exec">
+      <h2>Start boring. Postgres + S3 + Python + DuckDB gets you to 1M events/day.</h2>
+      <p class="sub">Thesis from research: buy ingestion connectors, buy warehouse, buy observability SaaS. Build business transforms and domain logic. Only introduce Kafka, Spark, Flink when pain is measured and recurring.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="label">Stage 0 Cost</div><div class="value">$15–50/mo</div><div class="note">1 eng · cron · PG · S3</div></div>
+        <div class="kpi"><div class="label">Stage 1 Cost</div><div class="value">$200–1.5k</div><div class="note">1–2 eng · Dagster · BQ · SQS</div></div>
+        <div class="kpi"><div class="label">Stage 2 Cost</div><div class="value">$2k–15k</div><div class="note">3–5 eng · Kafka · CDC · OTel</div></div>
+        <div class="kpi"><div class="label">Stage 3 Cost</div><div class="value">$20–100k+</div><div class="note">platform team · lakehouse · multi-region</div></div>
+      </div>
+      <div class="hero-meta">
+        <span>Market 2026: warehouses commoditized · S3 universal sink · Dagster > Airflow for small teams · OTel standard</span>
+        <span>Principle: Each self-hosted distributed system costs ~0.5–1 FTE ongoing</span>
+      </div>
+    </div>
+
+    <!-- Golden path -->
+    <div class="section">
+      <div class="card card-pad">
+        <h3 style="margin:0 0 10px;font-size:14px;letter-spacing:-.01em">Golden Path — Data flow by scale</h3>
+        <div class="flow">
+          <div class="node ingest"><div class="n-icon">◍</div><div class="n-title">Stage 0-1k/d</div><div class="n-desc">Webhooks → FastAPI → Postgres queue → S3 JSONL → DuckDB/DBT → Cron → Logs</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node store"><div class="n-icon">⇄</div><div class="n-title">Stage 1k-1M/d</div><div class="n-desc">+ S3 parquet landing + PubSub/SQS + Dagster + BigQuery + Airbyte</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node trans"><div class="n-icon">⚡</div><div class="n-title">Stage 1M-100M/d</div><div class="n-desc">+ Kafka/Redpanda + Flink or DBT+SNOW + Temporal + ClickHouse + OTel</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node orch"><div class="n-icon">◐</div><div class="n-title">Stage 100M+</div><div class="n-desc">Multi-region Kafka CDC Debezium Iceberg/Delta Spark/Flink Warehouse+Lakehouse</div></div>
+        </div>
+        <pre style="margin:12px 0 0">Decision: Need replay+ordering+>10k/s? → Redpanda/Kafka managed
+          No → serverless? → Kinesis / PubSub / SQS
+          Else → Webhooks+queue? → FastAPI+SQS/PG
+                 Else → Batch/CDC? PG→Debezium / APIs→Airbyte</pre>
+      </div>
+    </div>
+
+    <!-- LAYERS -->
+    <div class="section" id="layers">
+      <div class="section-head"><h3>5 Layers — Options & Tradeoffs</h3><span class="hint">From research §2-6</span></div>
+      <div class="grid2">
+        <div class="layer">
+          <h4>◍ Ingestion <em>push/stream/CDC</em></h4>
+          <ul class="opts">
+            <li><b>Webhooks/REST</b> — &lt;100ms, low-med throughput, low ops. 50 LOC FastAPI. Svix for retries.</li>
+            <li><b>Kafka/Redpanda</b> — &lt;10ms, 1M+/s, high ops unless managed. Redpanda: single binary, 10x simpler. Use Confluent/Upstash cloud.</li>
+            <li><b>Kinesis</b> — ~200ms, 10k/shard/s, low ops. AWS-native, 7-day retention. Use if AWS-only & <100M/d.</li>
+            <li><b>PubSub / SQS+SNS</b> — 50-500ms, auto-scale infinite, very low ops, per-msg. Best starting queue for small team. SQS→Lambda→S3 covers 80%.</li>
+            <li><b>CDC</b> — Debezium OSS gold (PG WAL→Kafka) but needs Kafka Connect. Airbyte/Fivetran managed CDC zero ops.</li>
+            <li><b>Batch</b> — Airbyte/Fivetran for external APIs. Don't build connectors unless proprietary.</li>
+          </ul>
+          <div class="tagrow"><span class="tag">Start: FastAPI+SQS</span><span class="tag">Growth: Redpanda Cloud</span><span class="tag">Anti: Kafka too early</span></div>
+        </div>
+        <div class="layer">
+          <h4>◑ Storage <em>OLTP / lake / warehouse</em></h4>
+          <ul class="opts">
+            <li><b>Postgres (Neon/Supabase/RDS)</b> — OLTP, ms latency, $10-50/mo. Handles 100M rows with JSONB, pg_cron. OLTP longer than you think.</li>
+            <li><b>S3/GCS</b> — infinite, secs via query engine, $0.023/GB, zero ops. Always land raw <code>s3://raw/YYYY/MM/DD/</code> immutable.</li>
+            <li><b>BigQuery</b> — serverless, auto-scale, $5/TB queried, free tier. Best small team, pay-per-query. Partition to avoid surprises.</li>
+            <li><b>Snowflake</b> — governed enterprise, $2-4/credit min $200+. Separation compute/storage.</li>
+            <li><b>DuckDB</b> — embedded OLAP, free, zero ops, queries parquet directly. 100M rows on laptop. Use as transform engine before warehouse.</li>
+            <li><b>Lakehouse</b> — Delta (Spark), Iceberg (open, multi-engine), Hudi (upserts). Start parquet, Iceberg when need time-travel > trillion rows.</li>
+          </ul>
+          <div class="tagrow"><span class="tag">Source of truth: S3</span><span class="tag">Anti: Snowflake at 1k/d</span><span class="tag">R2 cheaper egress</span></div>
+        </div>
+        <div class="layer">
+          <h4>⧉ Transform <em>batch & streaming</em></h4>
+          <ul class="opts">
+            <li><b>Python Polars/DuckDB</b> — &lt;10GB single node, zero ops. Polars 10x pandas. Processes 100M rows laptop.</li>
+            <li><b>DBT</b> — must-use for warehouse. SQL+Jinja, tests, docs, lineage. Core free, Cloud for CI. Don't build transform framework.</li>
+            <li><b>Spark</b> — TB-PB, high ops. Only >100GB shuffle. Most startups premature; avoid until 100M+/day & transforms >1hr.</li>
+            <li><b>Flink / Bytewax / ksqlDB</b> — streaming stateful. Flink complex (RocksDB+S3 checkpoint). Small team: micro-batch 1-min or RisingWave/Materialize Python-friendly.</li>
+          </ul>
+          <div class="tagrow"><span class="tag"><1GB: Polars</span><span class="tag">1-100GB: DBT+BQ</span><span class="tag">Streaming: Bytewax</span></div>
+        </div>
+        <div class="layer">
+          <h4>↻ Orchestration <em>scheduling</em></h4>
+          <ul class="opts">
+            <li><b>Cron+Python</b> — single node, zero ops, works surprisingly long. GitHub Actions cron / pg_cron.</li>
+            <li><b>Airflow</b> — DAG standard, rich UI old, large scale Celery+K8s, high ops, high learning. 1000+ operators. Choose if hiring pool needs it.</li>
+            <li><b>Dagster ⭐</b> — asset-based, software-defined, modern lineage, excellent UI, low-med ops. Local <code>dagster dev</code> instant. Best tradeoff small→mid.</li>
+            <li><b>Prefect 2</b> — Pythonic @flow/@task minimal boilerplate, Cloud free generous. Easiest Python devs.</li>
+            <li><b>Temporal</b> — durable execution, never lose job. For business processes (payments) over days, not ELT.</li>
+            <li><b>Step Functions</b> — zero ops AWS glue S3→Lambda→Warehouse, JSON verbose.</li>
+          </ul>
+          <div class="tagrow"><span class="tag">Start: Cron/Prefect</span><span class="tag">Grow: Dagster</span><span class="tag">Durable: Temporal</span></div>
+        </div>
+      </div>
+      <div style="margin-top:14px" class="layer">
+        <h4>◎ Observability <em>logs / metrics / traces / data quality</em></h4>
+        <div class="grid3">
+          <div><b style="font-size:12px">Core Signals</b><ul class="opts"><li><b>Logs:</b> Loki/ELK/CloudWatch → Datadog/BetterStack free-$50</li><li><b>Metrics:</b> Prometheus+Grafana → Datadog/Grafana Cloud</li><li><b>Traces:</b> OTel+Jaeger/Tempo → Honeycomb</li><li><b>Data Quality:</b> DBT tests/GE/Soda → Monte Carlo/Bigeye $10k+/yr only at 100M+</li><li><b>Alert tiers:</b> T1 pipeline fail, T2 freshness lag, T3 quality anomaly, T4 cost spike</li></ul></div>
+          <div><b style="font-size:12px">OTel Non-negotiable</b><ul class="opts"><li>Standard for traces/metrics/logs</li><li>Instrument FastAPI <code>opentelemetry-instrumentation-fastapi</code>, <code>psycopg</code></li><li>Send to Grafana Cloud free 10k series or Jaeger</li><li>Structure logs JSON include <code>trace_id</code>, <code>pipeline_run_id</code>, <code>event_count</code></li><li>S3 access logs for audit</li></ul></div>
+          <div><b style="font-size:12px">Data Observability Unique</b><ul class="opts"><li>DBT tests: uniqueness, not_null, accepted_values — free</li><li>Great Expectations / Soda heavier but good</li><li>Monte Carlo only when data downtime cost > tool cost</li><li>Build DBT tests manually, buy Monte Carlo later</li></ul></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUILD VS BUY MATRIX -->
+    <div class="section" id="buildbuy">
+      <div class="section-head"><h3>Build vs Buy Matrix — Interactive</h3><span class="hint">Blue=Build, Green=Buy managed, Amber=Hybrid, Red=Don't need yet · sortable & filterable</span></div>
+      <div class="card card-pad">
+        <div class="table-tools">
+          <input id="bb-search" placeholder="Filter: e.g. Kafka, warehouse, quality" style="flex:1;min-width:220px">
+          <select id="bb-category"><option value="">All categories</option><option>Ingestion</option><option>Storage</option><option>Transformation</option><option>Orchestration</option><option>Observability</option></select>
+          <select id="bb-verdict"><option value="">All verdicts</option><option value="BUILD">BUILD</option><option value="BUY">BUY</option><option value="HYBRID">HYBRID</option><option value="DONT">DON'T</option></select>
+          <span style="font-size:11px;color:var(--text3)" id="bb-count">29 rows</span>
+        </div>
+        <div class="table-wrap">
+          <table class="bb" id="bb-table">
+            <thead><tr>
+              <th data-k="cat">Category</th><th data-k="comp">Component</th><th data-k="build">Build manual</th><th data-k="buy">Buy / Managed</th><th data-k="stage">Rec by Stage</th><th data-k="verdict">Verdict</th>
+            </tr></thead>
+            <tbody>
+              <tr data-cat="Ingestion" data-verdict="BUILD"><td>Ingestion</td><td>Webhook receiver</td><td>50 LOC, control, custom validation</td><td>Svix $ for retries/delivery</td><td>0-1M: BUILD</td><td><span class="badge build">Build early</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>Queue (SQS/PubSub)</td><td>PG queue SKIP LOCKED – no bill</td><td>Managed scales infinite</td><td>0-1M: BUY</td><td><span class="badge buy">Buy managed</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>Kafka / Redpanda</td><td>Learning, control; huge ops, schema registry</td><td>Confluent/Redpanda/Upstash zero ops</td><td>&lt;1M: DON'T; &gt;1M: BUY managed</td><td><span class="badge buy">Buy managed</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>CDC (Debezium)</td><td>OSS build need Kafka Connect</td><td>Fivetran/Airbyte/Neon logical repl</td><td>&lt;1M simple; &gt;10M Debezium</td><td><span class="badge buy">Buy first</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>Connectors (Shopify etc)</td><td>Fragile, API drift</td><td>Airbyte 300+ connectors</td><td>Always BUY unless proprietary</td><td><span class="badge buy">Buy</span></td></tr>
+              <tr data-cat="Storage" data-verdict="BUY"><td>Storage</td><td>Postgres</td><td>Docker cheap, WAL pain</td><td>Neon/Supabase/RDS backups, branching</td><td>&lt;100M: BUY managed PG</td><td><span class="badge buy">Buy managed</span></td></tr>
+              <tr data-cat="Storage" data-verdict="BUY"><td>Storage</td><td>S3/GCS/R2</td><td>Can't build</td><td>Always buy $0.023/GB</td><td>All stages: BUY</td><td><span class="badge buy">Buy</span></td></tr>
+              <tr data-cat="Storage" data-verdict="HYBRID"><td>Storage</td><td>Warehouse</td><td>DuckDB dev free</td><td>BQ/Snowflake serverless</td><td>&lt;1M DuckDB/PG; &gt;1M BQ</td><td><span class="badge hybrid">Hybrid: DuckDB dev, BQ prod</span></td></tr>
+              <tr data-cat="Storage" data-verdict="DONT"><td>Storage</td><td>Lakehouse format</td><td>OSS Iceberg/Delta tooling</td><td>Onehouse/Tabular managed</td><td>Only &gt;100M: BUILD OSS</td><td><span class="badge dont">Later</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="HYBRID"><td>Transformation</td><td>SQL transforms (DBT)</td><td>Models + Jinja = IP</td><td>DBT Cloud CI/docs hosting</td><td>All: BUILD with DBT framework</td><td><span class="badge hybrid">Build models, Buy framework</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="BUILD"><td>Transformation</td><td>Python transforms</td><td>Polars/DuckDB scripts control</td><td>Databricks notebooks</td><td>&lt;100M: BUILD</td><td><span class="badge build">Build early</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="DONT"><td>Transformation</td><td>Streaming transforms</td><td>Flink complex RocksDB</td><td>RisingWave/Materialize/Confluent</td><td>&lt;1M: DON'T; &gt;10M managed</td><td><span class="badge dont">Don't yet</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="BUY"><td>Transformation</td><td>Spark</td><td>Self-host painful YARN</td><td>EMR/Databricks serverless</td><td>TB scale: BUY managed</td><td><span class="badge buy">Buy when needed</span></td></tr>
+              <tr data-cat="Orchestration" data-verdict="BUILD"><td>Orchestration</td><td>Cron</td><td>Easy 1-file, zero ops</td><td>Cloud Scheduler managed</td><td>0-1k: BUILD cron</td><td><span class="badge build">Build</span></td></tr>
+              <tr data-cat="Orchestration" data-verdict="BUY"><td>Orchestration</td><td>DAG orchestrator</td><td>Self-host Airflow/Dagster ops</td><td>MWAA/Dagster Cloud/Prefect Cloud</td><td>1k-1M BUY cloud; 1M+ self or cloud</td><td><span class="badge buy">Buy cloud early</span></td></tr>
+              <tr data-cat="Observability" data-verdict="BUY"><td>Observability</td><td>Logs</td><td>Loki/Prom self-host</td><td>BetterStack/Datadog</td><td>Early: Loki/Grafana Cloud</td><td><span class="badge hybrid">Build OSS or Grafana free</span></td></tr>
+              <tr data-cat="Observability" data-verdict="BUY"><td>Observability</td><td>Metrics/Traces</td><td>OTel+Prometheus+Grafana</td><td>Datadog/New Relic</td><td>Early: OTel+Grafana Cloud</td><td><span class="badge buy">Buy free tier</span></td></tr>
+              <tr data-cat="Observability" data-verdict="BUILD"><td>Observability</td><td>Data Quality</td><td>DBT tests free</td><td>Monte Carlo/Soda $10k+/yr</td><td>Early BUILD, later BUY</td><td><span class="badge build">Build early</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>Kinesis</td><td>Need AWS only</td><td>Firehose→S3+Lambda glue</td><td>AWS shop &lt;100M/d: BUY</td><td><span class="badge buy">Buy if AWS</span></td></tr>
+              <tr data-cat="Storage" data-verdict="BUY"><td>Storage</td><td>ClickHouse OLAP</td><td>Self-host complexity</td><td>Cloud real-time ms</td><td>Need real-time dash: BUY</td><td><span class="badge buy">Buy cloud</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="BUILD"><td>Transformation</td><td>S3 partitioning + Parquet writer</td><td>Understand file layout 100x cost impact</td><td>Managed auto-opt</td><td>Always BUILD understanding</td><td><span class="badge build">Build for learning</span></td></tr>
+              <tr data-cat="Observability" data-verdict="BUILD"><td>Observability</td><td>OTel instrumentation</td><td>Add trace/metrics vendor-neutral skill</td><td>Auto-instrumentation</td><td>All: BUILD manually</td><td><span class="badge build">Build IP</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="BUILD"><td>Transformation</td><td>Data API / serving layer</td><td>FastAPI over DW view IP</td><td>Hasura/PostgREST</td><td>BUILD custom</td><td><span class="badge build">Build</span></td></tr>
+              <tr data-cat="Storage" data-verdict="BUILD"><td>Storage</td><td>Idempotency keys</td><td>Unique index not fully solved by tooling</td><td>Queue exactly-once txn</td><td>BUILD critical</td><td><span class="badge build">Build</span></td></tr>
+              <tr data-cat="Transformation" data-verdict="BUILD"><td>Transformation</td><td>DLQ + replay</td><td>Manual DLQ teaches exactly-once vs at-least</td><td>Managed DLQ</td><td>BUILD learning</td><td><span class="badge build">Build mechanism</span></td></tr>
+              <tr data-cat="Observability" data-verdict="BUY"><td>Observability</td><td>Secret management</td><td>Risky homegrown</td><td>Doppler / cloud IAM</td><td>Always BUY</td><td><span class="badge buy">Buy</span></td></tr>
+              <tr data-cat="Ingestion" data-verdict="BUY"><td>Ingestion</td><td>Schema Registry</td><td>Self-host extra</td><td>Confluent Registry managed</td><td>When Kafka: BUY</td><td><span class="badge buy">Buy managed</span></td></tr>
+              <tr data-cat="Orchestration" data-verdict="BUY"><td>Orchestration</td><td>Spark cluster mgmt</td><td>Tune YARN painful</td><td>EMR/Databricks serverless</td><td>TB scale: BUY</td><td><span class="badge buy">Buy serverless</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text3)">
+          <span><span class="badge build" style="font-size:9px">BUILD</span> — core IP, low ops risk, high learning</span>
+          <span><span class="badge buy" style="font-size:9px">BUY</span> — solved, high ops if built, vendor does better</span>
+          <span><span class="badge hybrid" style="font-size:9px">HYBRID</span> — build models on buy framework</span>
+          <span><span class="badge dont" style="font-size:9px">DON'T</span> — premature at stage</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STAGES -->
+    <div class="section" id="stages">
+      <div class="section-head"><h3>Stage Evolution 0 → 100M+</h3><span class="hint">Tabs are interactive — each stage has architecture flow + signals to graduate</span></div>
+      <div class="card card-pad">
+        <div class="tabs" id="stage-tabs">
+          <button class="tab active" data-stage="s0">Stage 0 · 0-1k/d Prototype</button>
+          <button class="tab" data-stage="s1">Stage 1 · 1k-1M Traction</button>
+          <button class="tab" data-stage="s2">Stage 2 · 1M-100M Growth</button>
+          <button class="tab" data-stage="s3">Stage 3 · 100M+ Scale</button>
+        </div>
+        <div class="tabpanes">
+          <div class="tabpane active" id="s0">
+            <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:4px" class="grid2">
+              <div>
+                <div class="arch">
+                  <div class="arch-title"><b>Architecture — Ship fast, zero infra cost</b><span>$0-50/mo · 1 eng</span></div>
+                  <div class="flow">
+                    <div class="node ingest"><div class="n-title">Stripe webhook + App Events</div><div class="n-desc">FastAPI route Pydantic validate idempotency_key unique index</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node store"><div class="n-title">Postgres events_queue + S3 raw JSONL</div><div class="n-desc"><code>SELECT ... FOR UPDATE SKIP LOCKED</code> · <code>s3://raw/dt=.../jsonl</code></div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node trans"><div class="n-title">Python worker cron 5min</div><div class="n-desc">Pandas/Polars/DuckDB transform → agg table</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node obs"><div class="n-title">Logs</div><div class="n-desc">stdout JSON → Grafana Cloud free + Sentry</div></div>
+                  </div>
+                </div>
+                <pre style="margin-top:10px">[Stripe] → FastAPI(validate) → PG events_queue (status)
+                                    ↘ S3 raw JSONL
+cron 5m: worker SELECT SKIP LOCKED → Transform(DuckDB) → agg
+                                 → logs stdout → Grafana free</pre>
+              </div>
+              <div>
+                <div style="font-size:13px;color:var(--text2);line-height:1.55">
+                  <p><b style="color:var(--text)">Goal:</b> Prove value, preserve raw for replay.</p>
+                  <p><b style="color:var(--text)">Stack:</b> Supabase/Neon free tier, S3, DuckDB, Cron (pg_cron/GitHub Actions/apScheduler)</p>
+                  <p><b style="color:var(--text)">Build vs Buy:</b> Build everything except Postgres (buy managed). Avoid Kafka, Airflow, Snowflake.</p>
+                  <p><b style="color:var(--text)">Graduate signals → Stage 1:</b></p>
+                  <ul style="padding-left:16px;margin:4px 0">
+                    <li>Queries &gt;10s, PG CPU &gt;70%</li>
+                    <li>Backlog in queue, manual retry pain</li>
+                    <li>Need BI team or external API connectors</li>
+                  </ul>
+                  <div style="margin-top:10px" class="rec"><div class="icon" style="background:var(--blue-bg);border:1px solid var(--blue-bd)">✓</div><p><b>Rule:</b> Always save raw — transforming in-flight without saving raw = cannot reprocess.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tabpane" id="s1">
+            <div class="grid2">
+              <div>
+                <div class="arch">
+                  <div class="arch-title"><b>Architecture — Reliability, replay</b><span>$200-1.5k/mo · 1-2 eng + analyst</span></div>
+                  <div class="flow">
+                    <div class="node ingest"><div class="n-title">Webhooks + Airbyte API poll</div><div class="n-desc">SQS/PubSub queue, Svix inbound, Lambda/Cloud Run consumer</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node store"><div class="n-title">S3 parquet partitioned + PG + BQ</div><div class="n-desc">raw→parquet lifecycle Glacier; Neon scaled; BQ analytics</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node trans"><div class="n-title">DBT Core on BQ/Postgres</div><div class="n-desc">staging→marts + tests → Slack alert</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node orch"><div class="n-title">Prefect Cloud / Dagster OSS</div><div class="n-desc">single Docker on Fly.io/Render schedule DBT + OTel→Grafana Cloud</div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:13px;color:var(--text2)">
+                <p><b style="color:var(--text)">Goal:</b> Decouple sources, get replay, introduce warehouse pay-per-query.</p>
+                <p><b style="color:var(--text)">Stack additions:</b> SQS/PubSub/Kinesis if AWS, Cloud Run/Lambda, BigQuery sandbox + MotherDuck, DuckDB heavy lifts via Polars, Grafana Tempo/Loki, Sentry, DBT tests freshness checks.</p>
+                <p><b style="color:var(--text)">Graduate signals → Stage 2:</b> Need exactly-once stateful streaming, CDC PG→Warehouse lag, queue depth sustained &gt;5k, consumer lag &gt;minutes, team &gt;3.</p>
+              </div>
+            </div>
+          </div>
+          <div class="tabpane" id="s2">
+            <div class="grid2">
+              <div>
+                <div class="arch">
+                  <div class="arch-title"><b>Architecture — Scale, exactly-once, self-serve</b><span>$2k-15k/mo · 3-5 eng</span></div>
+                  <div class="flow">
+                    <div class="node ingest"><div class="n-title">Neon PG CDC Debezium → Redpanda Cloud</div><div class="n-desc">External APIs Airbyte→S3; App→Kinesis/PubSub idempotent producer</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node trans"><div class="n-title">Flink / RisingWave → agg stream</div><div class="n-desc">Bytewax option; Kinesis Analytics; ClickHouse real-time</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node store"><div class="n-title">S3 Iceberg if ACID + BQ/Snowflake + PG read replicas</div><div class="n-desc">sharded PG, lake for heavy scans</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node orch"><div class="n-title">Dagster Cloud K8s</div><div class="n-desc">asset lineage + data quality checks as asset checks + Temporal for payments</div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:13px;color:var(--text2)">
+                <p>Introduce managed streaming only here. Observability full: OTel Prometheus Grafana lag dashboards (consumer lag, queue depth), Monte Carlo/Soda $500+/mo, PagerDuty.</p>
+                <p><b style="color:var(--text)">Spark rule:</b> Use BigQuery/Snowflake first; introduce Spark only if TB shuffle needed.</p>
+                <p>Buy managed streaming, warehouse, orchestration control plane. Build transforms & domain services.</p>
+              </div>
+            </div>
+          </div>
+          <div class="tabpane" id="s3">
+            <div class="grid2">
+              <div>
+                <div class="arch">
+                  <div class="arch-title"><b>Architecture — Multi-region, SLOs, cost opt</b><span>$20k-100k+ · platform 5-10</span></div>
+                  <div class="flow">
+                    <div class="node ingest"><div class="n-title">Multi-region App → Local Redpanda → Global Kafka Confluent Tiered Storage S3</div><div class="n-desc">Schema Registry, Tiered Storage, CDC Debezium Connect distributed</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node trans"><div class="n-title">Flink sessionization fraud + Spark EMR/Databricks</div><div class="n-desc">Trino/StarRocks query Iceberg external tables</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node store"><div class="n-title">Iceberg Lake S3 + Snowflake/BQ BI + PG Vitess/Cockroach</div><div class="n-desc">offload heavy scans to lake, partition pruning cost controls</div></div>
+                    <div class="arrow"><span>→</span></div>
+                    <div class="node orch"><div class="n-title">Dagster/Airflow K8s 1000s DAGs + Temporal 10k workflows</div><div class="n-desc">OpenLineage+Marquez, Datadog, SLO alerting</div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:13px;color:var(--text2)">
+                <p>Focus tiered storage, query cost controls. Build platform abstractions internal ingestion SDK, schema enforcement for control. Buy warehouse, streaming managed, observability SaaS.</p>
+                <p><b>WarpStream</b> Kafka on S3 cheaper alternative evaluated 2026.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COST -->
+    <div class="section" id="cost">
+      <div class="section-head"><h3>Cost & Operational Overhead</h3><span class="hint">Illustrative US-East · 2026 pricing</span></div>
+      <div class="grid2">
+        <div class="card card-pad">
+          <h4 style="margin:0 0 12px;font-size:13px">Monthly cost by layer</h4>
+          <table class="cost-table">
+            <thead><tr><th>Component</th><th>0-1k/d</th><th>1k-1M/d</th><th>1M-100M/d</th><th>100M+</th></tr></thead>
+            <tbody>
+              <tr><td>Ingestion (queue)</td><td>$0-5 SQS</td><td>$10-100 Kinesis/PubSub</td><td>$200-2k Kafka managed</td><td>$2k-20k</td></tr>
+              <tr><td>Storage Postgres</td><td>$15 Neon</td><td>$50-200 RDS</td><td>$300-1k+</td><td>shared</td></tr>
+              <tr><td>Storage S3</td><td>$1</td><td>$10-50</td><td>$100-1k</td><td>$1k-10k</td></tr>
+              <tr><td>Warehouse</td><td>$0 DuckDB</td><td>$100-600 BQ</td><td>$500-5k</td><td>$5k-50k+</td></tr>
+              <tr><td>Transform compute</td><td>$0 local</td><td>$50-200 DBT/BQ</td><td>$500-5k Spark</td><td>$5k+</td></tr>
+              <tr><td>Orchestration</td><td>$0 cron</td><td>$0-100 Prefect</td><td>$200-800 Dagster</td><td>$1k+</td></tr>
+              <tr><td>Observability</td><td>$0 logs</td><td>$50-200 Grafana</td><td>$300-2k Datadog</td><td>$2k-10k</td></tr>
+              <tr><td><b>Total</b></td><td><b>$15-50</b></td><td><b>$200-1.5k</b></td><td><b>$2k-15k</b></td><td><b>$20k-100k+</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card card-pad">
+          <h4 style="margin:0 0 12px;font-size:13px">Operational overhead hrs/week (team 1-2)</h4>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div><div style="display:flex;justify-content:space-between;font-size:12px"><b>Postgres+S3+Python+Cron</b><span>0-1h</span></div><div class="bar"><i style="width:6%;background:#0f7a3d"></i></div><div style="font-size:11px;color:var(--text3)">Near zero ops — recommended start</div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:12px"><b>+Dagster+Supabase+BigQuery</b><span>1-3h</span></div><div class="bar"><i style="width:18%;background:var(--blue)"></i></div><div style="font-size:11px;color:var(--text3)">Managed services, manageable</div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:12px"><b>Managed Kafka/Databricks/Snowflake</b><span>3-5h</span></div><div class="bar"><i style="width:32%"></i></div><div style="font-size:11px;color:var(--text3)">Vendor ops but complexity grows</div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:12px"><b>Airflow+Kafka+Spark self-host</b><span>10-20h</span></div><div class="bar"><i style="width:68%;background:#d97706"></i></div><div style="font-size:11px;color:var(--text3)">You become infra team</div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:12px"><b>Lakehouse Iceberg+Flink self-host</b><span>15-30h</span></div><div class="bar"><i style="width:92%;background:var(--red)"></i></div><div style="font-size:11px;color:var(--text3)">Specialist needed</div></div>
+          </div>
+          <div style="margin-top:16px;padding:10px;border-radius:8px;background:var(--amber-bg);border:1px solid var(--amber-bd);font-size:12px">Team size: <b>Solo 1-2 no data eng</b> must go serverless/managed: SQS, Supabase/Neon, BQ, Prefect Cloud, DBT Core, Grafana Cloud. Avoid Airflow, self-hosted Kafka, Spark.<br><b>3-5 engineers one data-focused:</b> can self-host Dagster/Prefect, Airbyte, Redpanda single node, ClickHouse.<br><b>5-10 platform:</b> MSK/Confluent, MWAA, EMR, Iceberg, Flink.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SAMPLE DATA USE CASE -->
+    <div class="section" id="sample">
+      <div class="section-head"><h3>Sample Data Use Case — E-commerce Clickstream</h3><span class="hint">Users · Products · Events · Purchases — realistic funnel for pipeline research</span></div>
+      <div class="card card-pad">
+        <p style="margin:0 0 14px;font-size:13px;color:var(--text2);max-width:70ch"><b style="color:var(--text)">Business scenario:</b> Online retailer wants shopper behavior browsing→checkout. Analysts ask converting? referrer revenue? device/category? funnel drop-off? Product asks personalization, cart-abandon nudge, daily revenue dashboard. Dataset synthetic, RFC2606 emails, seed 42.</p>
+        <div class="entity-grid">
+          <div class="entity"><b>👥 Users — 100</b><div class="meta">users.json/.csv — OLTP dims</div><ul><li>id: user_0001 PK</li><li>email: fake @example.com</li><li>created_at: ISO8601 UTC 2yr spread</li><li>country: US 28% IN 12% DE 10% UK 8% +12 more</li><li>tier: free 50% standard 25% premium 20% enterprise 5% — for LTV</li></ul></div>
+          <div class="entity"><b>📦 Products — 50</b><div class="meta">8 cats: Electronics Apparel Home Books Sports Beauty Toys Grocery</div><ul><li>id: prod_0001 PK</li><li>name: Wireless Headphones etc</li><li>category enum 8 price ranges $5-299</li><li>price: float USD cat-dependent</li><li>stock: 0-500 — stock=0 edge case forces view not purchase</li></ul></div>
+          <div class="entity"><b>⚡ Events — ~500 clickstream 7 days</b><div class="meta">events.jsonl(CSV/JSON too) — JSONL = 1 Kafka msg</div><ul><li>user_id FK, product_id FK, event_type: view 70% add_to_cart 20% purchase 10%</li><li>timestamp ISO8601 sorted asc 7d window</li><li>session_id: sess_00001 1-4 per active user</li><li>device: mobile 60% desktop 30% tablet 10%</li><li>referrer: google 30% direct 25% fb 12% ig 10% email 8% …</li><li>page: /products/{id} /category/{cat} /cart /checkout</li></ul></div>
+          <div class="entity"><b>💳 Purchases — ~38 derived fact</b><div class="meta">purchases.json/.csv — gold-like denormalized</div><ul><li>purchase_id pur_00001 PK</li><li>user_id + denorm email/country/tier</li><li>product_id + name/cat/unit_price</li><li>quantity 1(75%) 2(20%) 3(5%) total_amount</li><li>timestamp = event ts, session_id device referrer</li><li>enriched join for revenue by cat/referrer/device queries</li></ul></div>
+        </div>
+
+        <h4 style="margin:18px 0 10px;font-size:13px">How it flows through pipeline (medallion)</h4>
+        <div class="flow">
+          <div class="node ingest"><div class="n-title">Ingestion</div><div class="n-desc">Web SDK → HTTP collector FastAPI → events.jsonl Kafka topic clickstream.raw 1 line = 1 msg · users/products batch dump nightly S3 raw/users/dt=…</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node store"><div class="n-title">Bronze raw</div><div class="n-desc">Immutable append-only S3 <code>raw/events/dt=2026-07-28/*.jsonl</code> schema-on-read · keep CSV+JSONL</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node trans"><div class="n-title">Silver cleaned</div><div class="n-desc">DuckDB parse UTC dedup (user,product,ts,session) validate FK filter unknown users Parquet partitioned event_date event_type</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node store"><div class="n-title">Gold star schema</div><div class="n-desc">dim_users SCD1 dim_products SCD2 price history fact_events fact_purchases gold-like sample already</div></div>
+          <div class="arrow"><span>→</span></div>
+          <div class="node orch"><div class="n-title">Serving</div><div class="n-desc">BI Metabase/Looker revenue cat funnel referrer device DAU top products · ML features last cats cart rate → rec model → Operational email trigger</div></div>
+        </div>
+
+        <details class="coll" style="margin-top:14px"><summary>Example transforms — batch & streaming <span class="chev">›</span></summary>
+          <div class="coll-body">
+            <p><b>Batch daily (Airflow/Dagster/Prefect):</b> funnel view→cart→purchase per category/referrer/device · sessionization group sess calc duration/bounce/events · DAU/WAU/LTV proxy tier/country · product views cart-add rate out-of-stock hits · Great Expectations quality: purchase total>0, event_type enum, ts within 7d</p>
+            <p><b>Streaming (Flink/Structured Streaming/Materialize):</b> filter add_to_cart not followed purchase 30min → abandonment event · 5-min tumbling window count views per product_id</p>
+            <pre># tiny version growable
+import duckdb
+con = duckdb.connect()
+con.sql("CREATE TABLE events AS SELECT * FROM 'datasets/events.csv'")
+con.sql("COPY (SELECT category, SUM(total_amount) FROM 'datasets/purchases.csv' GROUP BY category) TO 'gold_revenue.parquet'")
+# prod: same SQL source = Delta table
+# streaming: cat events.jsonl | kafka-console-producer --topic clickstream.raw
+</pre>
+            <p><b>Example queries from schemas.md:</b></p>
+            <pre>SELECT COUNT(*) FILTER(WHERE event_type='view') views, COUNT(*) FILTER(WHERE event_type='purchase') purchases,
+ ROUND(100.0*COUNT(*) FILTER(WHERE event_type='purchase')/NULLIF(COUNT(*) FILTER(WHERE event_type='view'),0),2) cvr FROM events;
+SELECT category, SUM(total_amount) revenue FROM purchases GROUP BY category ORDER BY revenue DESC;
+SELECT session_id, MIN(timestamp) start, MAX(timestamp) end, COUNT(*) events FROM events GROUP BY session_id;</pre>
+          </div>
+        </details>
+
+        <div class="grid2" style="margin-top:12px">
+          <div class="rec"><div class="icon tick b">✓</div><p><b>Why fits small→growable?</b> 100 users synthetic no privacy, funnel generalizable to SaaS/media/gaming, batch+streaming relevant (cart abandon real-time, revenue daily), forces dim/fact joins, scale by seed to 10k users same pipeline only partition changes.</p></div>
+          <div class="rec"><div class="icon tick g">↗</div><p><b>Growable path:</b> Phase0 now files+DuckDB notebook $0 &lt;1s. Phase1 Postgres OLTP + S3 Parquet DBT. Phase2 Kafka+Flink real-time funnel Delta Lake bronze/silver/gold Airflow. Phase3 Feast feature store + model serving from gold.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECS -->
+    <div class="section" id="recs">
+      <div class="section-head"><h3>Recommendations — What to Build vs Buy</h3></div>
+      <div class="grid2">
+        <div class="card card-pad">
+          <h4 style="margin:0 0 10px;font-size:13px;display:flex;align-items:center;gap:6px"><span class="tick b">⚒</span> Build manually — high learning, high control, low ops risk</h4>
+          <ol style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.6">
+            <li><b style="color:var(--text)">Webhook receiver + validation</b> — 1 FastAPI route Pydantic, idempotency pattern</li>
+            <li><b style="color:var(--text)">Simple queue consumer</b> — PG FOR UPDATE SKIP LOCKED or SQS polling loop, ack/retry</li>
+            <li><b style="color:var(--text)">Raw→staging DuckDB/Polars</b> — own business logic, avoid black-box</li>
+            <li><b style="color:var(--text)">DBT models + tests</b> — data model core IP never outsource</li>
+            <li><b style="color:var(--text)">S3 partitioning + Parquet writer</b> — file layout impacts query cost 100x</li>
+            <li><b style="color:var(--text)">OTel instrumentation</b> — vendor neutral trace/metrics</li>
+            <li><b style="color:var(--text)">Data API serving</b> — FastAPI over DW view</li>
+            <li><b style="color:var(--text)">Dead-letter + replay</b> — teaches exactly-once vs at-least</li>
+            <li><b style="color:var(--text)">Idempotency keys + dedup</b> — critical not fully solved by tooling</li>
+          </ol>
+        </div>
+        <div class="card card-pad">
+          <h4 style="margin:0 0 10px;font-size:13px;display:flex;align-items:center;gap:6px"><span class="tick g">☁</span> Plug-and-play for speed — low learning value, high ops if built</h4>
+          <ol style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.6">
+            <li><b style="color:var(--text)">Kafka hosting</b> — Redpanda/Confluent Cloud, self-host wastes sprints</li>
+            <li><b style="color:var(--text)">Postgres hosting/backups</b> — Neon/Supabase/RDS WAL archiving</li>
+            <li><b style="color:var(--text)">Warehouse engine</b> — BigQuery/Snowflake never build</li>
+            <li><b style="color:var(--text)">Connector ingestion</b> — Airbyte/Fivetran API changes constant</li>
+            <li><b style="color:var(--text)">Airflow hosting</b> — Dagster/Prefect Cloud/MWAA scheduler ops thankless</li>
+            <li><b style="color:var(--text)">Spark cluster</b> — EMR/Databricks serverless don't tune YARN</li>
+            <li><b style="color:var(--text)">Observability backend</b> — Grafana Cloud/Datadog don't run ELK unless expert</li>
+            <li><b style="color:var(--text)">Schema Registry, CDC infra</b> — Confluent Registry, Debezium managed</li>
+            <li><b style="color:var(--text)">Secret mgmt auth</b> — cloud IAM Doppler</li>
+          </ol>
+        </div>
+      </div>
+      <div class="card card-pad" style="margin-top:12px">
+        <h4 style="margin:0 0 8px;font-size:13px">Learning ladder — 4-month plan for eng wanting growth</h4>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:12px">
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg2)"><b>Month 1</b><br><span style="color:var(--text2)">Build FastAPI→SQS→S3→DuckDB→Grafana local</span></div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg2)"><b>Month 2</b><br><span style="color:var(--text2)">Swap SQS→Redpanda local Docker, PG queue→Kafka consumer, add DBT</span></div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg2)"><b>Month 3</b><br><span style="color:var(--text2)">Migrate DuckDB→BigQuery, orchestrate Dagster OSS, add OTel→Grafana Cloud, Airbyte 1st source</span></div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg2)"><b>Month 4</b><br><span style="color:var(--text2)">Add Debezium CDC PG→Kafka, Flink/Bytewax streaming count, Parquet→Iceberg, asset lineage</span></div>
+        </div>
+        <p style="margin:12px 0 0;font-size:11px;color:var(--text3)">Now you understand whole modern stack without burning prod. Scoring rubric Build vs Buy 1-5: core IP? managed cost > eng cost? ops low? learning critical? OSS 80% solved? &gt;15 Build &lt;10 Buy.</p>
+      </div>
+    </div>
+
+    <!-- QUICK START -->
+    <div class="section" id="quick">
+      <div class="section-head"><h3>Quick-start Stack — Serverless-first for AAI</h3><span class="hint">~$50-150/mo start, scales to $1k at 1M/d</span></div>
+      <div class="stack">
+        <h4>Recommended provisioning manifest</h4>
+        <div class="stack-grid">
+          <div class="stack-item"><div class="k">Ingestion</div><div class="v">FastAPI + Pydantic + SQS or Upstash Redis Queue or Cloudflare Workers + R2</div><div class="d">Webhook receiver 50 LOC, idempotency_key unique index</div></div>
+          <div class="stack-item"><div class="k">Storage</div><div class="v">Supabase Postgres + S3/R2 + Parquet partitioned</div><div class="d">R2 zero egress cheaper, s3://raw/{source}/dt=%Y-%m-%d/hour=%H/</div></div>
+          <div class="stack-item"><div class="k">Transform</div><div class="v">DuckDB + DBT Core + Polars</div><div class="d">Local & CI transforms, Polars 10x pandas</div></div>
+          <div class="stack-item"><div class="k">Orchestration</div><div class="v">Prefect Cloud free tier or Dagster OSS on Fly.io single container</div><div class="d">flows: ingest, transform_dbt, quality_check</div></div>
+          <div class="stack-item"><div class="k">Warehouse optional</div><div class="v">BigQuery sandbox when >100k/d or MotherDuck</div><div class="d">Pay-per-query, partitioning mandatory</div></div>
+          <div class="stack-item"><div class="k">Observability</div><div class="v">Sentry + Grafana Cloud free (Loki+Tempo+Prom) + OTel + DBT tests</div><div class="d">Alert queue depth >1000, freshness lag, cost spike</div></div>
+        </div>
+        <pre style="margin-top:14px;background:rgba(0,0,0,.4);border-color:rgba(255,255,255,.1);color:#cbd5e1">Neon Postgres      – app DB + queue via SKIP LOCKED
+R2/S3 bucket       – raw/{source}/dt=%Y-%m-%d/hour=%H/
+Prefect            – flows: ingest, transform_dbt, quality_check
+DuckDB             – local & CI transforms
+BigQuery sandbox   – optional when >100k/day
+Grafana Cloud      – OTel + alert queue depth >1000
+Airbyte OSS (ECS)  – when need 3rd-party connectors</pre>
+      </div>
+    </div>
+
+    <!-- ANTI PATTERNS -->
+    <div class="section" id="antipatterns">
+      <div class="section-head"><h3>Anti-patterns & Pitfalls</h3></div>
+      <div class="card card-pad">
+        <div class="grid3" style="font-size:12px;color:var(--text2);line-height:1.5">
+          <ul style="margin:0;padding-left:16px"><li><b style="color:var(--text)">Kafka too early</b> — ordering/partitioning bugs for <100k/d</li><li><b style="color:var(--text)">No raw landing</b> — no reprocess; always save raw</li><li><b style="color:var(--text)">EL vs ELT confusion</b> — don't transform before warehouse early, ELT simpler</li><li><b style="color:var(--text)">Spark for small data</b> — 100x cost 10x latency vs DuckDB</li></ul>
+          <ul style="margin:0;padding-left:16px"><li><b style="color:var(--text)">Airflow as cron</b> — over-engineering <10 DAGs</li><li><b style="color:var(--text)">No idempotency</b> — duplicates cause money bugs add idempotency_key unique</li><li><b style="color:var(--text)">Manual JSON logs</b> — not queryable use structured+trace_id</li><li><b style="color:var(--text)">No partitioning</b> — BQ full scan $100 query partition date cluster user_id</li></ul>
+          <ul style="margin:0;padding-left:16px"><li><b style="color:var(--text)">Premature exactly-once</b> — aim at-least-once+idempotent consumer first</li><li><b style="color:var(--text)">Building connectors</b> — API drift kills buy Airbyte</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="vendors">
+      <div class="section-head"><h3>Vendors to Evaluate 2026</h3></div>
+      <div class="card card-pad">
+        <div class="grid3" style="font-size:12px;line-height:1.6;color:var(--text2)">
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Queues</b><br>Upstash (Redis/Kafka), AWS SQS, GCP PubSub, Cloudflare Queues</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Streaming managed</b><br>Redpanda Cloud, Confluent Cloud, WarpStream (Kafka on S3 cheap)</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Postgres managed</b><br>Neon, Supabase, CrunchyBridge</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Warehouse</b><br>BigQuery, Snowflake, MotherDuck, ClickHouse Cloud, Tinybird</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Orchestration</b><br>Dagster Cloud, Prefect Cloud, Temporal Cloud, MWAA, Shipyard</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Ingestion CDC</b><br>Airbyte Cloud, Fivetran, Estuary, Decodable</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Observability</b><br>Grafana Cloud, Datadog, Honeycomb, BetterStack, Sentry</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Lakehouse</b><br>Tabular, Onehouse, Dremio, Starburst</div>
+          <div><b style="color:var(--text);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Sources</b><br>DuckDB docs, Redpanda vs Kafka, Dagster survey, WarpStream cost analysis, BQ best practices, OTel Python</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <span>Built from scout-pipeline-research/research.md (534 lines, 30k) · sample data README + schemas.md · Standalone HTML inline CSS no external deps</span>
+      <span>Worktree: ship-html-overview · /Users/ajez/AAI/pipeline-overview.html</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+// Stage tabs
+document.querySelectorAll('#stage-tabs .tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#stage-tabs .tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));
+    document.getElementById(btn.dataset.stage).classList.add('active');
+  });
+});
+
+// BB matrix filter + sort
+const search = document.getElementById('bb-search');
+const catSel = document.getElementById('bb-category');
+const verdictSel = document.getElementById('bb-verdict');
+const countEl = document.getElementById('bb-count');
+const tbody = document.querySelector('#bb-table tbody');
+const rows = Array.from(tbody.querySelectorAll('tr'));
+
+function applyFilter(){
+  const q = search.value.toLowerCase();
+  const cat = catSel.value;
+  const verd = verdictSel.value;
+  let visible=0;
+  rows.forEach(r=>{
+    const text = r.textContent.toLowerCase();
+    const c = r.dataset.cat;
+    const v = r.dataset.verdict;
+    const okQ = !q || text.includes(q);
+    const okC = !cat || c===cat;
+    const okV = !verd || v===verd || r.textContent.includes(verd);
+    const show = okQ && okC && okV;
+    r.style.display = show ? '' : 'none';
+    if(show) visible++;
+  });
+  countEl.textContent = visible+' rows';
+}
+search.addEventListener('input', applyFilter);
+catSel.addEventListener('change', applyFilter);
+verdictSel.addEventListener('change', applyFilter);
+
+// Sortable headers
+let sortCol=null, sortDir=1;
+document.querySelectorAll('#bb-table th').forEach((th,i)=>{
+  th.addEventListener('click',()=>{
+    const k = th.dataset.k;
+    if(sortCol===k) sortDir*=-1; else {sortCol=k; sortDir=1}
+    document.querySelectorAll('#bb-table th').forEach(h=>h.classList.remove('sort-asc','sort-desc'));
+    th.classList.add(sortDir===1?'sort-asc':'sort-desc');
+    const sorted = rows.slice().sort((a,b)=>{
+      const av = a.children[i]?.textContent.trim()||'';
+      const bv = b.children[i]?.textContent.trim()||'';
+      return av.localeCompare(bv)*sortDir;
+    });
+    sorted.forEach(r=>tbody.appendChild(r));
+    applyFilter();
+  });
+});
+
+// Sidenav active on scroll
+const sections = document.querySelectorAll('.section, .hero');
+const navLinks = document.querySelectorAll('.sidenav a');
+const obs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      navLinks.forEach(a=>a.classList.remove('active'));
+      const id = e.target.id;
+      const link = document.querySelector(`.sidenav a[href="#${id}"]`);
+      if(link) link.classList.add('active');
+    }
+  });
+},{rootMargin:'-30% 0px -60% 0px'});
+sections.forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

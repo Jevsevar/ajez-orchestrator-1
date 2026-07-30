@@ -1,0 +1,17 @@
+{
+  "id": "scout-pipeline-research",
+  "task_type": "scout",
+  "task": "Market research on data pipeline infrastructure for a small project that could grow: what solutions should be built manually vs plug-and-play. Cover ingestion, storage, transformation, orchestration, observability, cost, scalability. Deliver markdown report with build-vs-buy matrix",
+  "status": "DONE",
+  "created_at": "2026-07-30T18:54:15Z",
+  "updated_at": "2026-07-30T18:54:23Z",
+  "worktree_path": "/Users/ajez/AAI/.orchestrator/worktrees/scout-pipeline-research",
+  "branch": "crew/scout-pipeline-research",
+  "tmux_session": "crew-scout-pipeline-research",
+  "tmux_pane": "%1",
+  "adapter": "generic",
+  "pid": 74498,
+  "exit_code": 0,
+  "output_path": ".orchestrator/crew/scout-pipeline-research/output.md",
+  "base_ref": "main"
+}

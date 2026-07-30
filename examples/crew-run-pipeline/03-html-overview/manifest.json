@@ -1,0 +1,17 @@
+{
+  "id": "ship-html-overview",
+  "task_type": "ship",
+  "task": "Build HTML overview of data pipeline research that was done by scout-pipeline-research. Read research from .orchestrator/worktrees/scout-pipeline-research/research.md and .orchestrator/crew/scout-pipeline-research/output.md, create an HTML file overview in worktree: pipeline-overview.html with architecture diagram, build vs buy matrix, stage recommendations, styled. Should be standalone HTML with inline CSS, interactive sections.",
+  "status": "DONE",
+  "created_at": "2026-07-30T18:58:34Z",
+  "updated_at": "2026-07-30T18:58:41Z",
+  "worktree_path": "/Users/ajez/AAI/.orchestrator/worktrees/ship-html-overview",
+  "branch": "crew/ship-html-overview",
+  "tmux_session": "crew-ship-html-overview",
+  "tmux_pane": "%3",
+  "adapter": "generic",
+  "pid": 77495,
+  "exit_code": 0,
+  "output_path": ".orchestrator/crew/ship-html-overview/output.md",
+  "base_ref": "main"
+}

@@ -1,0 +1,352 @@
+[
+  {
+    "id": "prod_0001",
+    "name": "Board Game",
+    "category": "Toys",
+    "price": 49.09,
+    "stock": 388
+  },
+  {
+    "id": "prod_0002",
+    "name": "Design Patterns",
+    "category": "Books",
+    "price": 16.89,
+    "stock": 243
+  },
+  {
+    "id": "prod_0003",
+    "name": "USB-C Hub",
+    "category": "Electronics",
+    "price": 201.98,
+    "stock": 251
+  },
+  {
+    "id": "prod_0004",
+    "name": "Fitness Tracker",
+    "category": "Sports",
+    "price": 72.74,
+    "stock": 8
+  },
+  {
+    "id": "prod_0005",
+    "name": "Soccer Ball",
+    "category": "Sports",
+    "price": 23.03,
+    "stock": 113
+  },
+  {
+    "id": "prod_0006",
+    "name": "Smart Watch",
+    "category": "Electronics",
+    "price": 135.81,
+    "stock": 124
+  },
+  {
+    "id": "prod_0007",
+    "name": "Cycling Helmet",
+    "category": "Sports",
+    "price": 52.87,
+    "stock": 297
+  },
+  {
+    "id": "prod_0008",
+    "name": "LEGO Creator Set",
+    "category": "Toys",
+    "price": 39.52,
+    "stock": 283
+  },
+  {
+    "id": "prod_0009",
+    "name": "Perfume Mist",
+    "category": "Beauty",
+    "price": 49.35,
+    "stock": 217
+  },
+  {
+    "id": "prod_0010",
+    "name": "Almond Butter",
+    "category": "Grocery",
+    "price": 39.88,
+    "stock": 281
+  },
+  {
+    "id": "prod_0011",
+    "name": "Baseball Cap",
+    "category": "Apparel",
+    "price": 49.73,
+    "stock": 359
+  },
+  {
+    "id": "prod_0012",
+    "name": "Protein Bar Box",
+    "category": "Grocery",
+    "price": 20.88,
+    "stock": 156
+  },
+  {
+    "id": "prod_0013",
+    "name": "Olive Oil",
+    "category": "Grocery",
+    "price": 13.8,
+    "stock": 61
+  },
+  {
+    "id": "prod_0014",
+    "name": "Coffee Maker",
+    "category": "Home",
+    "price": 133.18,
+    "stock": 161
+  },
+  {
+    "id": "prod_0015",
+    "name": "Bluetooth Speaker",
+    "category": "Electronics",
+    "price": 57.76,
+    "stock": 274
+  },
+  {
+    "id": "prod_0016",
+    "name": "RC Car",
+    "category": "Toys",
+    "price": 86.07,
+    "stock": 353
+  },
+  {
+    "id": "prod_0017",
+    "name": "Puzzle 1000pcs",
+    "category": "Toys",
+    "price": 24.81,
+    "stock": 110
+  },
+  {
+    "id": "prod_0018",
+    "name": "Art Set",
+    "category": "Toys",
+    "price": 69.09,
+    "stock": 141
+  },
+  {
+    "id": "prod_0019",
+    "name": "Organic Coffee",
+    "category": "Grocery",
+    "price": 30.36,
+    "stock": 500
+  },
+  {
+    "id": "prod_0020",
+    "name": "Action Figure",
+    "category": "Toys",
+    "price": 70.82,
+    "stock": 305
+  },
+  {
+    "id": "prod_0021",
+    "name": "Running Shoes",
+    "category": "Apparel",
+    "price": 44.71,
+    "stock": 51
+  },
+  {
+    "id": "prod_0022",
+    "name": "Winter Jacket",
+    "category": "Apparel",
+    "price": 102.43,
+    "stock": 151
+  },
+  {
+    "id": "prod_0023",
+    "name": "Building Blocks",
+    "category": "Toys",
+    "price": 28.2,
+    "stock": 91
+  },
+  {
+    "id": "prod_0024",
+    "name": "Throw Pillow",
+    "category": "Home",
+    "price": 62.78,
+    "stock": 362
+  },
+  {
+    "id": "prod_0025",
+    "name": "Desk Lamp",
+    "category": "Home",
+    "price": 101.73,
+    "stock": 140
+  },
+  {
+    "id": "prod_0026",
+    "name": "Water Bottle",
+    "category": "Sports",
+    "price": 16.37,
+    "stock": 27
+  },
+  {
+    "id": "prod_0027",
+    "name": "Python Cookbook",
+    "category": "Books",
+    "price": 28.47,
+    "stock": 357
+  },
+  {
+    "id": "prod_0028",
+    "name": "Portable SSD",
+    "category": "Electronics",
+    "price": 283.68,
+    "stock": 326
+  },
+  {
+    "id": "prod_0029",
+    "name": "Athletic Shorts",
+    "category": "Apparel",
+    "price": 106.19,
+    "stock": 251
+  },
+  {
+    "id": "prod_0030",
+    "name": "Sci-Fi Novel",
+    "category": "Books",
+    "price": 11.8,
+    "stock": 6
+  },
+  {
+    "id": "prod_0031",
+    "name": "Cotton T-Shirt",
+    "category": "Apparel",
+    "price": 75.28,
+    "stock": 240
+  },
+  {
+    "id": "prod_0032",
+    "name": "Honey Jar",
+    "category": "Grocery",
+    "price": 21.75,
+    "stock": 174
+  },
+  {
+    "id": "prod_0033",
+    "name": "Linen Shirt",
+    "category": "Apparel",
+    "price": 34.36,
+    "stock": 26
+  },
+  {
+    "id": "prod_0034",
+    "name": "Kitchen Knife Set",
+    "category": "Home",
+    "price": 54.42,
+    "stock": 441
+  },
+  {
+    "id": "prod_0035",
+    "name": "Sunscreen",
+    "category": "Beauty",
+    "price": 45.31,
+    "stock": 420
+  },
+  {
+    "id": "prod_0036",
+    "name": "Moisturizer",
+    "category": "Beauty",
+    "price": 13.97,
+    "stock": 251
+  },
+  {
+    "id": "prod_0037",
+    "name": "Shampoo Bar",
+    "category": "Beauty",
+    "price": 14.63,
+    "stock": 322
+  },
+  {
+    "id": "prod_0038",
+    "name": "History of AI",
+    "category": "Books",
+    "price": 33.4,
+    "stock": 77
+  },
+  {
+    "id": "prod_0039",
+    "name": "Dark Chocolate",
+    "category": "Grocery",
+    "price": 10.22,
+    "stock": 288
+  },
+  {
+    "id": "prod_0040",
+    "name": "Jump Rope",
+    "category": "Sports",
+    "price": 142.88,
+    "stock": 43
+  },
+  {
+    "id": "prod_0041",
+    "name": "Air Purifier",
+    "category": "Home",
+    "price": 178.98,
+    "stock": 60
+  },
+  {
+    "id": "prod_0042",
+    "name": "Dumbbell Set",
+    "category": "Sports",
+    "price": 88.13,
+    "stock": 213
+  },
+  {
+    "id": "prod_0043",
+    "name": "Wool Socks",
+    "category": "Apparel",
+    "price": 78.66,
+    "stock": 404
+  },
+  {
+    "id": "prod_0044",
+    "name": "Plush Bear",
+    "category": "Toys",
+    "price": 59.47,
+    "stock": 397
+  },
+  {
+    "id": "prod_0045",
+    "name": "Denim Jeans",
+    "category": "Apparel",
+    "price": 69.87,
+    "stock": 230
+  },
+  {
+    "id": "prod_0046",
+    "name": "Makeup Brush Kit",
+    "category": "Beauty",
+    "price": 78.05,
+    "stock": 152
+  },
+  {
+    "id": "prod_0047",
+    "name": "Cookbook Vegan",
+    "category": "Books",
+    "price": 39.83,
+    "stock": 219
+  },
+  {
+    "id": "prod_0048",
+    "name": "Face Serum",
+    "category": "Beauty",
+    "price": 32.21,
+    "stock": 317
+  },
+  {
+    "id": "prod_0049",
+    "name": "Green Tea Pack",
+    "category": "Grocery",
+    "price": 7.11,
+    "stock": 491
+  },
+  {
+    "id": "prod_0050",
+    "name": "Granola Mix",
+    "category": "Grocery",
+    "price": 30.9,
+    "stock": 485
+  }
+]

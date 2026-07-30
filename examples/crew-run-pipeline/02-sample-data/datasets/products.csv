@@ -1,0 +1,51 @@
+id,name,category,price,stock
+prod_0001,Board Game,Toys,49.09,388
+prod_0002,Design Patterns,Books,16.89,243
+prod_0003,USB-C Hub,Electronics,201.98,251
+prod_0004,Fitness Tracker,Sports,72.74,8
+prod_0005,Soccer Ball,Sports,23.03,113
+prod_0006,Smart Watch,Electronics,135.81,124
+prod_0007,Cycling Helmet,Sports,52.87,297
+prod_0008,LEGO Creator Set,Toys,39.52,283
+prod_0009,Perfume Mist,Beauty,49.35,217
+prod_0010,Almond Butter,Grocery,39.88,281
+prod_0011,Baseball Cap,Apparel,49.73,359
+prod_0012,Protein Bar Box,Grocery,20.88,156
+prod_0013,Olive Oil,Grocery,13.8,61
+prod_0014,Coffee Maker,Home,133.18,161
+prod_0015,Bluetooth Speaker,Electronics,57.76,274
+prod_0016,RC Car,Toys,86.07,353
+prod_0017,Puzzle 1000pcs,Toys,24.81,110
+prod_0018,Art Set,Toys,69.09,141
+prod_0019,Organic Coffee,Grocery,30.36,500
+prod_0020,Action Figure,Toys,70.82,305
+prod_0021,Running Shoes,Apparel,44.71,51
+prod_0022,Winter Jacket,Apparel,102.43,151
+prod_0023,Building Blocks,Toys,28.2,91
+prod_0024,Throw Pillow,Home,62.78,362
+prod_0025,Desk Lamp,Home,101.73,140
+prod_0026,Water Bottle,Sports,16.37,27
+prod_0027,Python Cookbook,Books,28.47,357
+prod_0028,Portable SSD,Electronics,283.68,326
+prod_0029,Athletic Shorts,Apparel,106.19,251
+prod_0030,Sci-Fi Novel,Books,11.8,6
+prod_0031,Cotton T-Shirt,Apparel,75.28,240
+prod_0032,Honey Jar,Grocery,21.75,174
+prod_0033,Linen Shirt,Apparel,34.36,26
+prod_0034,Kitchen Knife Set,Home,54.42,441
+prod_0035,Sunscreen,Beauty,45.31,420
+prod_0036,Moisturizer,Beauty,13.97,251
+prod_0037,Shampoo Bar,Beauty,14.63,322
+prod_0038,History of AI,Books,33.4,77
+prod_0039,Dark Chocolate,Grocery,10.22,288
+prod_0040,Jump Rope,Sports,142.88,43
+prod_0041,Air Purifier,Home,178.98,60
+prod_0042,Dumbbell Set,Sports,88.13,213
+prod_0043,Wool Socks,Apparel,78.66,404
+prod_0044,Plush Bear,Toys,59.47,397
+prod_0045,Denim Jeans,Apparel,69.87,230
+prod_0046,Makeup Brush Kit,Beauty,78.05,152
+prod_0047,Cookbook Vegan,Books,39.83,219
+prod_0048,Face Serum,Beauty,32.21,317
+prod_0049,Green Tea Pack,Grocery,7.11,491
+prod_0050,Granola Mix,Grocery,30.9,485
