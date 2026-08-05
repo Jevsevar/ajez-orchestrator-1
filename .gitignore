@@ -2,6 +2,9 @@
 .orchestrator/worktrees/
 .orchestrator/logs/
 .orchestrator/report.md
+.orchestrator/briefs/
+.orchestrator/decisions/
+.orchestrator/uplift-log.md
 
 # Optionally ignore crew state in production (uncomment if you don't want manifests tracked):
 # .orchestrator/crew/*/
