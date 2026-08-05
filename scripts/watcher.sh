@@ -69,23 +69,12 @@ touch "$watcher_log" 2>/dev/null || true
 check_output_status() {
   # check_output_status <output.md>
   # returns DONE|BLOCKED|FAILED|RUNNING
+  # Delegates to detect_output_status (scripts/common.sh), the single owner of
+  # marker detection. It matches only the LAST non-empty line, so a task brief
+  # that documents the marker cannot complete the worker. Keep this a delegation:
+  # a second implementation here is exactly how the two drifted before (D001).
   local out="$1"
-  if [[ ! -f "$out" ]]; then
-    echo "RUNNING"
-    return
-  fi
-  # Check last 100 lines for markers (cheap)
-  local tail_content
-  tail_content="$(tail -n 200 "$out" 2>/dev/null || cat "$out")"
-  if echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*DONE"; then
-    echo "DONE"
-  elif echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*BLOCKED"; then
-    echo "BLOCKED"
-  elif echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*FAILED"; then
-    echo "FAILED"
-  else
-    echo "RUNNING"
-  fi
+  detect_output_status "$out"
 }
 
 poll_once() {

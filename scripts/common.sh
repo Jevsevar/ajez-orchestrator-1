@@ -186,5 +186,30 @@ ensure_orch_dirs() {
   mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR"
 }
 
+# detect_output_status <output.md> -> DONE|BLOCKED|FAILED|RUNNING
+#
+# The completion marker is honoured ONLY on the last non-empty line of the file.
+#
+# Why: output.md contains the worker's task brief, and a brief that documents the
+# completion protocol ("append <!-- STATUS: DONE --> when finished") used to match
+# a whole-file grep and complete the worker instantly. Any prose that mentions a
+# marker - a brief, a quoted instruction, an agent thinking out loud - must not be
+# able to end the worker. Only a marker the worker appends last counts.
+# See .orchestrator/decisions/D001-spawn-injection-and-false-done.md
+detect_output_status() {
+  local out="$1" last
+  if [[ ! -f "$out" ]]; then
+    echo "RUNNING"
+    return
+  fi
+  last="$(grep -v '^[[:space:]]*$' "$out" 2>/dev/null | tail -n 1)"
+  case "$last" in
+    *'<!--'*STATUS:*DONE*'-->'*)    echo "DONE" ;;
+    *'<!--'*STATUS:*BLOCKED*'-->'*) echo "BLOCKED" ;;
+    *'<!--'*STATUS:*FAILED*'-->'*)  echo "FAILED" ;;
+    *)                              echo "RUNNING" ;;
+  esac
+}
+
 # Export
 export ROOT_DIR ORCH_DIR CREW_DIR LOGS_DIR WORKTREES_DIR ORCH_LOG

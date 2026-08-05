@@ -17,6 +17,14 @@ log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
 }
 
+# Marker detection is owned by scripts/common.sh (detect_output_status): it reads
+# only the LAST non-empty line of output.md. Adapters run as separate processes,
+# so each sources it rather than inheriting it. (D001)
+_ADAPTER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../scripts/common.sh
+. "$_ADAPTER_DIR/../scripts/common.sh"
+
+
 log_to_output ""
 log_to_output "## Adapter: claude-code"
 log_to_output "- Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -44,8 +52,17 @@ You are an autonomous worker in a crew orchestrator system. You work in an isola
 
 ## Your Task
 
-> $TASK_DESC
+TASK_EOF
 
+# Task text spliced from the variable as DATA. Interpolating it into the
+# unquoted heredoc above executed markdown backticks as shell commands. (D001)
+{
+  printf '```text\n'
+  printf '%s\n' "$TASK_DESC"
+  printf '```\n\n'
+} >> "$WORKTREE_PATH/CLAUDE_TASK.md"
+
+cat >> "$WORKTREE_PATH/CLAUDE_TASK.md" <<TASK_EOF
 ## Task Type Specifics
 
 ### If TASK_TYPE=ship:
@@ -209,15 +226,21 @@ echo '<!-- STATUS: BLOCKED -->' >> $OUTPUT_PATH
   echo ""
   echo "[claude-code adapter] Claude finished with exit $CLAUDE_EXIT"
 
-  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  # Marker goes LAST, after any explanatory prose: detection reads the final
+  # non-empty line of output.md, so a marker followed by a heading is invisible.
+  # The "already marked?" test must use the same last-line rule as the watcher -
+  # a whole-file grep matched the task brief and completed workers instantly. (D001)
+  if [[ "$(detect_output_status "$OUTPUT_PATH")" == "RUNNING" ]]; then
     if [[ $CLAUDE_EXIT -eq 0 ]]; then
       log_to_output ""
-      log_to_output "<!-- STATUS: DONE -->"
       log_to_output "## Auto-marked DONE (claude --print exited 0)"
+      log_to_output ""
+      log_to_output "<!-- STATUS: DONE -->"
     else
       log_to_output ""
-      log_to_output "<!-- STATUS: FAILED -->"
       log_to_output "## Failed with exit $CLAUDE_EXIT"
+      log_to_output ""
+      log_to_output "<!-- STATUS: FAILED -->"
     fi
   fi
   exit $CLAUDE_EXIT
@@ -272,8 +295,8 @@ LAUNCH_HINT
 
   echo "[claude-code adapter] Session ended exit $CLAUDE_EXIT"
 
-  # Ensure status marker
-  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  # Ensure status marker (last-line rule - see D001)
+  if [[ "$(detect_output_status "$OUTPUT_PATH")" == "RUNNING" ]]; then
     log_to_output ""
     if [[ $CLAUDE_EXIT -eq 0 ]]; then
       log_to_output "<!-- STATUS: DONE -->"

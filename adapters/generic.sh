@@ -17,6 +17,14 @@ log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
 }
 
+# Marker detection is owned by scripts/common.sh (detect_output_status): it reads
+# only the LAST non-empty line of output.md. Adapters run as separate processes,
+# so each sources it rather than inheriting it. (D001)
+_ADAPTER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../scripts/common.sh
+. "$_ADAPTER_DIR/../scripts/common.sh"
+
+
 # Ensure output exists
 mkdir -p "$(dirname "$OUTPUT_PATH")" 2>/dev/null || true
 touch "$OUTPUT_PATH" 2>/dev/null || true
@@ -41,8 +49,16 @@ cat > "$WORKTREE_PATH/PROMPT.md" <<PROMPT_EOF
 
 ## Task Description
 
-$TASK_DESC
+PROMPT_EOF
 
+# Spliced as DATA - see D001. An unquoted heredoc executed backticks in the task.
+{
+  printf '```text\n'
+  printf '%s\n' "$TASK_DESC"
+  printf '```\n\n'
+} >> "$WORKTREE_PATH/PROMPT.md"
+
+cat >> "$WORKTREE_PATH/PROMPT.md" <<PROMPT_EOF
 ## Your Role
 
 You are an autonomous coding agent working in an isolated git worktree.
@@ -252,7 +268,7 @@ if [[ -n "$AGENT_CMD" ]]; then
   esac
 
   # After attempt, check if STATUS marker now present
-  if grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  if [[ "$(detect_output_status "$OUTPUT_PATH")" != "RUNNING" ]]; then
     echo "Agent signaled completion via output.md"
     exit 0
   else
