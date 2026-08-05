@@ -5,8 +5,13 @@
 
 # Resolve root from this file location
 _COMMON_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$_COMMON_SH_DIR/.." && pwd)"
-ORCH_DIR="$ROOT_DIR/.orchestrator"
+
+# ORCH_ROOT / ORCH_HOME let a test point the orchestrator at a throwaway tree.
+# Both default to today's behaviour exactly: without them, paths resolve from
+# this file's location as before. Tests MUST set them - sourcing this file
+# creates state directories, so an unredirected test writes into the real repo.
+ROOT_DIR="${ORCH_ROOT:-$(cd "$_COMMON_SH_DIR/.." && pwd)}"
+ORCH_DIR="${ORCH_HOME:-$ROOT_DIR/.orchestrator}"
 CREW_DIR="$ORCH_DIR/crew"
 LOGS_DIR="$ORCH_DIR/logs"
 WORKTREES_DIR="$ORCH_DIR/worktrees"

@@ -118,10 +118,10 @@ echo y > "$REPO/real.txt"; git -C "$REPO" add -A; git -C "$REPO" commit -qm work
 worker_has_evidence "$REPO" "$BASE" && ok "commit beyond base -> evidence" || no "commit not counted"
 
 # launch.sh must gate auto-DONE on the evidence check, not on the exit code.
-grep -q 'worker_has_evidence "$WT_PATH" "$BASE_REF"' "$ROOT/scripts/spawn-worker.sh" \
+grep -q 'worker_has_evidence "$WT_PATH" "$BASE_SHA"' "$ROOT/scripts/spawn-worker.sh" \
   && ok "launch.sh gates auto-DONE on evidence" || no "auto-DONE still exit-code only"
-grep -q 'BASE_REF=%q' "$ROOT/scripts/spawn-worker.sh" \
-  && ok "BASE_REF passed through launch.env" || no "BASE_REF missing from launch.env"
+grep -q 'BASE_SHA=%q' "$ROOT/scripts/spawn-worker.sh" \
+  && ok "BASE_SHA (immutable) passed through launch.env" || no "BASE_SHA missing from launch.env"
 
 # Adapters must not decide completion themselves any more.
 for f in "$ROOT/adapters/claude-code.sh"; do

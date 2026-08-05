@@ -345,8 +345,17 @@ TASK_DESC_TRIMMED="$(echo "$TASK_DESC" | sed 's/^[[:space:]]*//;s/[[:space:]]*$/
 if [[ ${#TASK_DESC_TRIMMED} -lt 5 ]]; then
   die "Task description too short (${#TASK_DESC_TRIMMED} chars). Provide at least 5 chars, e.g. 'Fix bug in login'." 1
 fi
-if [[ "$ADAPTER" != "generic" && "$ADAPTER" != "claude-code" ]]; then
-  error "Invalid --adapter '$ADAPTER': must be generic or claude-code"
+# Validate by existence, not by a hardcoded list. README documents the extension
+# point ("create adapters/my-agent.sh, then --adapter my-agent"); a whitelist of
+# generic|claude-code silently broke it, and the error even listed the adapter it
+# was rejecting. Adapter names are restricted to a safe charset because the name
+# becomes part of a path.
+case "$ADAPTER" in
+  *[!a-zA-Z0-9._-]*|""|.|..)
+    die "Invalid --adapter '$ADAPTER': use letters, digits, dot, underscore or hyphen." 1 ;;
+esac
+if [[ ! -f "$ROOT_DIR/adapters/$ADAPTER.sh" ]]; then
+  error "Invalid --adapter '$ADAPTER': no such file $ROOT_DIR/adapters/$ADAPTER.sh"
   echo "Available:" >&2
   ls -1 "$ROOT_DIR"/adapters/*.sh 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.sh$//' | sed 's/^/  - /' >&2
   exit 1
@@ -428,6 +437,17 @@ else
   fi
 fi
 info "Base ref for worktree: $BASE_REF, branch: $BRANCH_NAME"
+
+# Resolve the base to an immutable SHA for the evidence check (D002). BASE_REF
+# is a human-readable name and may literally be "HEAD" - which, evaluated inside
+# the worker's own worktree, resolves to the worker's tip, making HEAD..HEAD zero
+# commits. A worker that committed all its work would then look like it did
+# nothing and be marked FAILED. Resolve here, in the parent repo, once.
+BASE_SHA=""
+if [[ "$IN_GIT" == true ]]; then
+  BASE_SHA="$(git -C "$ROOT_DIR" rev-parse --verify "$BASE_REF^{commit}" 2>/dev/null || echo "")"
+  [[ -z "$BASE_SHA" ]] && warn "Could not resolve '$BASE_REF' to a commit; evidence check will fall back to file changes"
+fi
 
 # ---- Prepare timestamps and escaped JSON values ----
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -700,6 +720,7 @@ LAUNCH_ENV="$W_DIR/launch.env"
   printf 'OUTPUT_MD=%q\n'      "$OUTPUT_MD"
   printf 'M_PATH=%q\n'         "$M_PATH"
   printf 'BASE_REF=%q\n'       "$BASE_REF"
+  printf 'BASE_SHA=%q\n'       "$BASE_SHA"
   printf 'COMMON_SH=%q\n'      "$SCRIPT_DIR/common.sh"
 } > "$LAUNCH_ENV" || die "Failed to write launch env $LAUNCH_ENV" 1
 
@@ -737,7 +758,7 @@ if [ "$(detect_output_status "$OUTPUT_MD")" = "RUNNING" ]; then
   # Exit code alone decides nothing. A harness that never launched (sandbox
   # denial, missing credentials) exits 0 having done nothing, and used to be
   # auto-marked DONE. Require evidence of actual work. (D002)
-  if [ $EXIT_CODE -eq 0 ] && worker_has_evidence "$WT_PATH" "$BASE_REF"; then
+  if [ $EXIT_CODE -eq 0 ] && worker_has_evidence "$WT_PATH" "$BASE_SHA"; then
     {
       echo ""
       echo "## Auto-completed with exit code 0"
@@ -749,7 +770,7 @@ if [ "$(detect_output_status "$OUTPUT_MD")" = "RUNNING" ]; then
       echo ""
       echo "## Failed: adapter exited 0 but produced no work"
       echo ""
-      echo "No commits beyond \`$BASE_REF\`, no modified tracked files, and no new"
+      echo "No commits beyond \`$BASE_REF\` ($BASE_SHA), no modified tracked files, and no new"
       echo "files other than the adapter's own CLAUDE_TASK.md / PROMPT.md."
       echo "The agent most likely never started. Check the pane for launch errors."
       echo ""
