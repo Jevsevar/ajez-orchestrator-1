@@ -89,6 +89,47 @@ for f in "$ROOT/adapters/claude-code.sh" "$ROOT/adapters/generic.sh"; do
     && no "$n still whole-file greps for markers" || ok "$n has no whole-file marker grep"
 done
 
+echo "== D002: exit code 0 is not evidence of work =="
+
+REPO="$TMP/repo"; mkdir -p "$REPO"
+git -C "$REPO" init -q 2>/dev/null
+git -C "$REPO" config user.email t@t; git -C "$REPO" config user.name t
+echo seed > "$REPO/seed.txt"; git -C "$REPO" add -A; git -C "$REPO" commit -qm seed
+BASE="$(git -C "$REPO" rev-parse HEAD)"
+
+# An agent that never launched: adapter wrote its prompt files, nothing else.
+: > "$REPO/CLAUDE_TASK.md"; : > "$REPO/PROMPT.md"
+worker_has_evidence "$REPO" "$BASE" \
+  && no "adapter prompt files counted as work" \
+  || ok "only CLAUDE_TASK.md/PROMPT.md present -> no evidence"
+
+# A real new file counts.
+echo x > "$REPO/tests_added.sh"
+worker_has_evidence "$REPO" "$BASE" && ok "new untracked file -> evidence" || no "new file not counted"
+rm -f "$REPO/tests_added.sh"
+
+# A modified tracked file counts.
+echo changed >> "$REPO/seed.txt"
+worker_has_evidence "$REPO" "$BASE" && ok "modified tracked file -> evidence" || no "modification not counted"
+git -C "$REPO" checkout -- seed.txt
+
+# A commit counts.
+echo y > "$REPO/real.txt"; git -C "$REPO" add -A; git -C "$REPO" commit -qm work
+worker_has_evidence "$REPO" "$BASE" && ok "commit beyond base -> evidence" || no "commit not counted"
+
+# launch.sh must gate auto-DONE on the evidence check, not on the exit code.
+grep -q 'worker_has_evidence "$WT_PATH" "$BASE_REF"' "$ROOT/scripts/spawn-worker.sh" \
+  && ok "launch.sh gates auto-DONE on evidence" || no "auto-DONE still exit-code only"
+grep -q 'BASE_REF=%q' "$ROOT/scripts/spawn-worker.sh" \
+  && ok "BASE_REF passed through launch.env" || no "BASE_REF missing from launch.env"
+
+# Adapters must not decide completion themselves any more.
+for f in "$ROOT/adapters/claude-code.sh"; do
+  n="$(basename "$f")"
+  grep -q 'Auto-marked DONE (claude --print exited 0)' "$f" \
+    && no "$n still auto-marks DONE on exit 0" || ok "$n no longer marks DONE on exit 0"
+done
+
 echo
 echo "RESULT total=$((PASS+FAIL)) passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

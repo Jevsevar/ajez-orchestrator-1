@@ -230,19 +230,12 @@ echo '<!-- STATUS: BLOCKED -->' >> $OUTPUT_PATH
   # non-empty line of output.md, so a marker followed by a heading is invisible.
   # The "already marked?" test must use the same last-line rule as the watcher -
   # a whole-file grep matched the task brief and completed workers instantly. (D001)
-  if [[ "$(detect_output_status "$OUTPUT_PATH")" == "RUNNING" ]]; then
-    if [[ $CLAUDE_EXIT -eq 0 ]]; then
-      log_to_output ""
-      log_to_output "## Auto-marked DONE (claude --print exited 0)"
-      log_to_output ""
-      log_to_output "<!-- STATUS: DONE -->"
-    else
-      log_to_output ""
-      log_to_output "## Failed with exit $CLAUDE_EXIT"
-      log_to_output ""
-      log_to_output "<!-- STATUS: FAILED -->"
-    fi
-  fi
+  # Deliberately does NOT mark a status here. launch.sh is the single owner of
+  # auto-marking and gates it on evidence of real work, not on the exit code.
+  # This adapter marked DONE on exit 0, which silently completed workers whose
+  # agent never launched. (D002)
+  log_to_output ""
+  log_to_output "- claude exited $CLAUDE_EXIT; completion decided by launch.sh evidence check"
   exit $CLAUDE_EXIT
 
 else
@@ -295,15 +288,9 @@ LAUNCH_HINT
 
   echo "[claude-code adapter] Session ended exit $CLAUDE_EXIT"
 
-  # Ensure status marker (last-line rule - see D001)
-  if [[ "$(detect_output_status "$OUTPUT_PATH")" == "RUNNING" ]]; then
-    log_to_output ""
-    if [[ $CLAUDE_EXIT -eq 0 ]]; then
-      log_to_output "<!-- STATUS: DONE -->"
-    else
-      log_to_output "<!-- STATUS: FAILED -->"
-    fi
-  fi
+  # No status marker here either - launch.sh decides on evidence. (D002)
+  log_to_output ""
+  log_to_output "- claude session ended $CLAUDE_EXIT; completion decided by launch.sh evidence check"
 
   exit $CLAUDE_EXIT
 fi

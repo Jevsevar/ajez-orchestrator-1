@@ -186,6 +186,41 @@ ensure_orch_dirs() {
   mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR"
 }
 
+# worker_has_evidence <worktree> <base_ref> -> 0 if the worker actually did something
+#
+# "The agent exited 0" is not evidence of work. A harness that fails to launch,
+# a sandbox denial, or an agent that reads the brief and stops all exit 0 - and
+# used to be auto-marked DONE, producing a worker with zero commits that looked
+# complete to the lead. Evidence means one of:
+#   - at least one commit on the worker branch beyond its base, or
+#   - a modified tracked file, or
+#   - a new untracked file that the adapter did not write itself.
+#
+# CLAUDE_TASK.md and PROMPT.md are excluded: adapters generate them before the
+# agent runs, so their presence proves only that the adapter started.
+# See .orchestrator/decisions/D002-exit-zero-is-not-evidence.md
+worker_has_evidence() {
+  local wt="$1" base="${2:-}" n
+  [ -d "$wt" ] || return 1
+
+  if git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
+    if [ -n "$base" ]; then
+      n="$(git -C "$wt" rev-list --count "$base"..HEAD 2>/dev/null || echo 0)"
+      [ "${n:-0}" -gt 0 ] && return 0
+    fi
+    git -C "$wt" diff --quiet 2>/dev/null || return 0
+    git -C "$wt" diff --cached --quiet 2>/dev/null || return 0
+    n="$(git -C "$wt" ls-files --others --exclude-standard 2>/dev/null \
+         | grep -v -x -e 'CLAUDE_TASK.md' -e 'PROMPT.md' | wc -l | tr -d ' ')"
+    [ "${n:-0}" -gt 0 ] && return 0
+    return 1
+  fi
+
+  # Non-git placeholder worktree: any file beyond the adapter's own scaffolding.
+  n="$(find "$wt" -type f ! -name 'CLAUDE_TASK.md' ! -name 'PROMPT.md' ! -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')"
+  [ "${n:-0}" -gt 0 ]
+}
+
 # detect_output_status <output.md> -> DONE|BLOCKED|FAILED|RUNNING
 #
 # The completion marker is honoured ONLY on the last non-empty line of the file.

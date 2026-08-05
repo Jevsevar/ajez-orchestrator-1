@@ -699,6 +699,7 @@ LAUNCH_ENV="$W_DIR/launch.env"
   printf 'TASK_FILE=%q\n'      "$TASK_FILE"
   printf 'OUTPUT_MD=%q\n'      "$OUTPUT_MD"
   printf 'M_PATH=%q\n'         "$M_PATH"
+  printf 'BASE_REF=%q\n'       "$BASE_REF"
   printf 'COMMON_SH=%q\n'      "$SCRIPT_DIR/common.sh"
 } > "$LAUNCH_ENV" || die "Failed to write launch env $LAUNCH_ENV" 1
 
@@ -733,12 +734,26 @@ echo "[worker $WORKER_ID] Adapter exited with code $EXIT_CODE"
 # detect_output_status inspects the LAST non-empty line, so the task brief quoted
 # earlier in output.md cannot look like a completion. (D001)
 if [ "$(detect_output_status "$OUTPUT_MD")" = "RUNNING" ]; then
-  if [ $EXIT_CODE -eq 0 ]; then
+  # Exit code alone decides nothing. A harness that never launched (sandbox
+  # denial, missing credentials) exits 0 having done nothing, and used to be
+  # auto-marked DONE. Require evidence of actual work. (D002)
+  if [ $EXIT_CODE -eq 0 ] && worker_has_evidence "$WT_PATH" "$BASE_REF"; then
     {
       echo ""
       echo "## Auto-completed with exit code 0"
       echo ""
       echo "<!-- STATUS: DONE -->"
+    } >> "$OUTPUT_MD"
+  elif [ $EXIT_CODE -eq 0 ]; then
+    {
+      echo ""
+      echo "## Failed: adapter exited 0 but produced no work"
+      echo ""
+      echo "No commits beyond \`$BASE_REF\`, no modified tracked files, and no new"
+      echo "files other than the adapter's own CLAUDE_TASK.md / PROMPT.md."
+      echo "The agent most likely never started. Check the pane for launch errors."
+      echo ""
+      echo "<!-- STATUS: FAILED -->"
     } >> "$OUTPUT_MD"
   else
     {
