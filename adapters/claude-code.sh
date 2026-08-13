@@ -9,9 +9,16 @@ set -euo pipefail
 WORKER_ID="${1:-unknown}"
 WORKTREE_PATH="${2:-$(pwd)}"
 TASK_TYPE="${3:-ship}"
-TASK_DESC="${4:-No task provided}"
+BRIEF_FILE="${4:-}"
 OUTPUT_PATH="${5:-$WORKTREE_PATH/../output.md}"
 MANIFEST_PATH="${6:-}"
+
+# Read task description from brief file if provided
+if [[ -n "$BRIEF_FILE" && -f "$BRIEF_FILE" ]]; then
+  TASK_DESC="$(cat "$BRIEF_FILE")"
+else
+  TASK_DESC="${4:-No task provided}"
+fi
 
 log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
@@ -209,11 +216,14 @@ echo '<!-- STATUS: BLOCKED -->' >> $OUTPUT_PATH
   echo ""
   echo "[claude-code adapter] Claude finished with exit $CLAUDE_EXIT"
 
-  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED\|STATUS: NEEDS_REVIEW" "$OUTPUT_PATH" 2>/dev/null; then
     if [[ $CLAUDE_EXIT -eq 0 ]]; then
       log_to_output ""
-      log_to_output "<!-- STATUS: DONE -->"
-      log_to_output "## Auto-marked DONE (claude --print exited 0)"
+      log_to_output "<!-- STATUS: NEEDS_REVIEW -->"
+      log_to_output "## Claude completed but did not signal DONE"
+      log_to_output ""
+      log_to_output "Claude Code exited with code 0 but did not write <!-- STATUS: DONE --> marker."
+      log_to_output "Manual review required to verify work is complete."
     else
       log_to_output ""
       log_to_output "<!-- STATUS: FAILED -->"
@@ -273,10 +283,14 @@ LAUNCH_HINT
   echo "[claude-code adapter] Session ended exit $CLAUDE_EXIT"
 
   # Ensure status marker
-  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED\|STATUS: NEEDS_REVIEW" "$OUTPUT_PATH" 2>/dev/null; then
     log_to_output ""
     if [[ $CLAUDE_EXIT -eq 0 ]]; then
-      log_to_output "<!-- STATUS: DONE -->"
+      log_to_output "<!-- STATUS: NEEDS_REVIEW -->"
+      log_to_output "## Session ended but no explicit status"
+      log_to_output ""
+      log_to_output "Claude Code session ended but did not write a STATUS marker."
+      log_to_output "Manual review required."
     else
       log_to_output "<!-- STATUS: FAILED -->"
     fi

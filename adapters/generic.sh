@@ -9,9 +9,16 @@ set -euo pipefail
 WORKER_ID="${1:-unknown}"
 WORKTREE_PATH="${2:-$(pwd)}"
 TASK_TYPE="${3:-ship}"
-TASK_DESC="${4:-No task provided}"
+BRIEF_FILE="${4:-}"
 OUTPUT_PATH="${5:-$WORKTREE_PATH/../output.md}"
 MANIFEST_PATH="${6:-}"
+
+# Read task description from brief file if provided
+if [[ -n "$BRIEF_FILE" && -f "$BRIEF_FILE" ]]; then
+  TASK_DESC="$(cat "$BRIEF_FILE")"
+else
+  TASK_DESC="${4:-No task provided}"
+fi
 
 log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
@@ -139,8 +146,12 @@ run_placeholder() {
     log_to_output "- Task was: $TASK_DESC"
     log_to_output "- Recommendation: Use real adapter (claude-code) or ensure agent CLI in PATH"
     log_to_output ""
-    log_to_output "<!-- STATUS: DONE -->"
-    echo "[generic adapter] Scout placeholder completed"
+    log_to_output "<!-- STATUS: NEEDS_REVIEW -->"
+    log_to_output "## Simulation Complete"
+    log_to_output ""
+    log_to_output "This is a placeholder simulation. No real agent was available."
+    log_to_output "Manual review required."
+    echo "[generic adapter] Scout placeholder completed (NEEDS_REVIEW)"
     exit 0
   else
     log_to_output "## Simulated Ship Work"
@@ -177,8 +188,13 @@ Placeholder commit to demo ship flow." 2>&1 | tee -a "$OUTPUT_PATH" || true
     log_to_output ""
     log_to_output "Created placeholder artifact."
     log_to_output ""
-    log_to_output "<!-- STATUS: DONE -->"
-    echo "[generic adapter] Ship placeholder completed"
+    log_to_output "<!-- STATUS: NEEDS_REVIEW -->"
+    log_to_output "## Simulation Complete"
+    log_to_output ""
+    log_to_output "This is a placeholder simulation. No real agent was available."
+    log_to_output "A demo commit was created to prove the flow works."
+    log_to_output "Manual review required to verify actual work is complete."
+    echo "[generic adapter] Ship placeholder completed (NEEDS_REVIEW)"
     exit 0
   fi
 }
@@ -252,13 +268,18 @@ if [[ -n "$AGENT_CMD" ]]; then
   esac
 
   # After attempt, check if STATUS marker now present
-  if grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED" "$OUTPUT_PATH" 2>/dev/null; then
+  if grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED\|STATUS: NEEDS_REVIEW" "$OUTPUT_PATH" 2>/dev/null; then
     echo "Agent signaled completion via output.md"
     exit 0
   else
-    echo "Agent did not signal STATUS, falling back to placeholder simulation"
-    log_to_output "No STATUS marker from $AGENT_CMD, running placeholder to ensure DONE"
-    run_placeholder
+    echo "Agent did not signal STATUS, marking as NEEDS_REVIEW"
+    log_to_output ""
+    log_to_output "<!-- STATUS: NEEDS_REVIEW -->"
+    log_to_output "## Agent completed but did not signal status"
+    log_to_output ""
+    log_to_output "The agent ($AGENT_CMD) ran but did not write a STATUS marker to output.md."
+    log_to_output "Manual review required to verify work is complete."
+    exit 0
   fi
 else
   log_to_output "No known agent CLI detected. Running in SIMULATION mode."

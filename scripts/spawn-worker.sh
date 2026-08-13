@@ -23,6 +23,10 @@ BASE_BRANCH=""
 DRY_RUN="false"
 ALLOW_DIRTY="false"
 FORCE="false"
+QUEUE="false"
+
+# Concurrency control
+MAX_CONCURRENT_WORKERS="${MAX_CONCURRENT_WORKERS:-5}"
 
 # Colors for error clarity (fallback to no color if not tty)
 RED='\033[0;31m'
@@ -51,7 +55,12 @@ Options:
   --allow-dirty  Allow spawning even if git repo has uncommitted changes
   --force        Force overwrite: remove existing worker dir/worktree/branch/session if they exist
   --dry-run      Print what would happen without spawning
+  --queue        If at max concurrency, queue the task instead of refusing
   -h, --help     Show this help
+
+Environment:
+  MAX_CONCURRENT_WORKERS  Maximum concurrent RUNNING workers (default: 5)
+                           Tasks beyond limit are refused or queued with --queue
 
 Lifecycle:
   PENDING -> SPAWNING -> RUNNING -> DONE | BLOCKED | FAILED
@@ -317,6 +326,8 @@ while [[ $# -gt 0 ]]; do
       FORCE="true"; shift;;
     --dry-run)
       DRY_RUN="true"; shift;;
+    --queue)
+      QUEUE="true"; shift;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -370,6 +381,63 @@ if ! mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR" 2>/dev/null; then
 fi
 # Touch log file
 touch "$ORCH_LOG" 2>/dev/null || warn "Cannot touch log $ORCH_LOG (permissions?)"
+
+# ---- Concurrency check ----
+info "Checking concurrent worker limit (max: $MAX_CONCURRENT_WORKERS)..."
+RUNNING_COUNT=$(list_manifests | while read -r m; do
+  status=$(get_json_field "$m" "status" 2>/dev/null || echo "")
+  if [[ "$status" == "RUNNING" ]]; then
+    echo "1"
+  fi
+done | wc -l | xargs)
+
+info "Currently $RUNNING_COUNT running workers"
+
+if [[ "$RUNNING_COUNT" -ge "$MAX_CONCURRENT_WORKERS" ]]; then
+  if [[ "$QUEUE" == "true" ]]; then
+    # Queue the task
+    QUEUE_FILE="$ORCH_DIR/queue.txt"
+    TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Escape task description for safe storage
+    ESCAPED_TASK=$(printf '%s' "$TASK_DESC" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
+    echo "{\"timestamp\":\"$TIMESTAMP\",\"task_type\":\"$TASK_TYPE\",\"task\":\"$ESCAPED_TASK\",\"adapter\":\"$ADAPTER\",\"base_branch\":\"$BASE_BRANCH\"}" >> "$QUEUE_FILE"
+    info "At concurrency limit ($RUNNING_COUNT/$MAX_CONCURRENT_WORKERS). Task queued to $QUEUE_FILE"
+    echo ""
+    echo "=== Task Queued ==="
+    echo "Position: $(wc -l < "$QUEUE_FILE" | xargs)"
+    echo "Task: $TASK_DESC"
+    echo "Type: $TASK_TYPE"
+    echo "Queue file: $QUEUE_FILE"
+    echo ""
+    echo "The watcher will auto-dequeue when a slot opens."
+    exit 0
+  else
+    error "Maximum concurrent workers reached ($RUNNING_COUNT/$MAX_CONCURRENT_WORKERS)"
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  1. Wait for a worker to finish, then retry" >&2
+    echo "  2. Use --queue flag to queue this task" >&2
+    echo "  3. Increase limit: MAX_CONCURRENT_WORKERS=10 $0 ..." >&2
+    echo "  4. List workers: ./scripts/list-workers.sh" >&2
+    echo "" >&2
+    die "Refusing to spawn: at concurrency limit. Use --queue to queue instead." 9
+  fi
+fi
+
+# Add stagger delay for batch spawns (avoid thundering herd)
+# Sleep 2 seconds if another spawn happened recently
+STAGGER_FILE="$ORCH_DIR/.last_spawn"
+if [[ -f "$STAGGER_FILE" ]]; then
+  LAST_SPAWN=$(cat "$STAGGER_FILE" 2>/dev/null || echo "0")
+  CURRENT_TIME=$(date +%s)
+  ELAPSED=$((CURRENT_TIME - LAST_SPAWN))
+  if [[ "$ELAPSED" -lt 2 ]]; then
+    SLEEP_TIME=$((2 - ELAPSED))
+    info "Staggering spawn by ${SLEEP_TIME}s to avoid resource contention..."
+    sleep "$SLEEP_TIME"
+  fi
+fi
+date +%s > "$STAGGER_FILE"
 
 # ---- Generate and sanitize worker ID ----
 if [[ -n "$CUSTOM_ID" ]]; then
@@ -631,7 +699,12 @@ BRANCH=$BRANCH_NAME
 ADAPTER=$ADAPTER
 BASE_REF=$BASE_REF
 CREATED_AT=$NOW
+BRIEF_FILE=$W_DIR/brief.md
 EOF
+
+# ---- Create brief file with task description (for safe reading) ----
+info "Creating task brief $W_DIR/brief.md"
+printf '%s' "$TASK_DESC" > "$W_DIR/brief.md"
 
 # ---- Validate adapter again (redundant safety) ----
 if [[ ! -f "$ADAPTER_SCRIPT" ]]; then
@@ -663,44 +736,78 @@ fi
 # Create launch script
 LAUNCH_SH="$W_DIR/launch.sh"
 info "Creating launch script $LAUNCH_SH"
-cat > "$LAUNCH_SH" <<LAUNCH_EOF
-#!/usr/bin/env bash
-set -e
-cd "$WT_PATH"
-echo "[worker $WORKER_ID] Starting adapter $ADAPTER" | tee -a "$OUTPUT_MD"
-echo "[worker $WORKER_ID] Worktree: $WT_PATH" | tee -a "$OUTPUT_MD"
-echo "[worker $WORKER_ID] Task: $TASK_TYPE - $TASK_DESC"
-echo ""
+# Use shell_quote to safely embed values in the launch script
+Q_WORKER_ID=$(shell_quote "$WORKER_ID")
+Q_WT_PATH=$(shell_quote "$WT_PATH")
+Q_OUTPUT_MD=$(shell_quote "$OUTPUT_MD")
+Q_TASK_TYPE=$(shell_quote "$TASK_TYPE")
+Q_ADAPTER_SCRIPT=$(shell_quote "$ADAPTER_SCRIPT")
+Q_M_PATH=$(shell_quote "$M_PATH")
+Q_BRIEF_FILE=$(shell_quote "$W_DIR/brief.md")
+Q_ADAPTER=$(shell_quote "$ADAPTER")
 
-# Run adapter
-bash "$ADAPTER_SCRIPT" "$WORKER_ID" "$WT_PATH" "$TASK_TYPE" "$TASK_DESC" "$OUTPUT_MD" "$M_PATH"
-EXIT_CODE=\$?
-echo ""
-echo "[worker $WORKER_ID] Adapter exited with code \$EXIT_CODE"
-
-if ! grep -q "STATUS: DONE\\|STATUS: BLOCKED\\|STATUS: FAILED" "$OUTPUT_MD" 2>/dev/null; then
-  if [ \$EXIT_CODE -eq 0 ]; then
-    echo "" >> "$OUTPUT_MD"
-    echo "<!-- STATUS: DONE -->" >> "$OUTPUT_MD"
-    echo "## Auto-completed with exit code 0" >> "$OUTPUT_MD"
-  else
-    echo "" >> "$OUTPUT_MD"
-    echo "<!-- STATUS: FAILED -->" >> "$OUTPUT_MD"
-    echo "## Failed with exit code \$EXIT_CODE" >> "$OUTPUT_MD"
-  fi
-fi
-
-if command -v jq >/dev/null 2>&1; then
-  TMP=\$(mktemp)
-  if [ \$EXIT_CODE -eq 0 ]; then
-    jq --arg ts "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="DONE" | .updated_at=\$ts | .exit_code=0' "$M_PATH" > "\$TMP" 2>/dev/null && mv "\$TMP" "$M_PATH" || rm -f "\$TMP"
-  else
-    jq --arg ts "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ec \$EXIT_CODE '.status="FAILED" | .updated_at=\$ts | .exit_code=\$ec' "$M_PATH" > "\$TMP" 2>/dev/null && mv "\$TMP" "$M_PATH" || rm -f "\$TMP"
-  fi
-fi
-
-exit \$EXIT_CODE
-LAUNCH_EOF
+# Generate launch script using printf to avoid sed portability issues
+{
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf '%s\n' 'set -e'
+  printf 'WORKER_ID=%s\n' "$Q_WORKER_ID"
+  printf 'WT_PATH=%s\n' "$Q_WT_PATH"
+  printf 'OUTPUT_MD=%s\n' "$Q_OUTPUT_MD"
+  printf 'TASK_TYPE=%s\n' "$Q_TASK_TYPE"
+  printf 'ADAPTER_SCRIPT=%s\n' "$Q_ADAPTER_SCRIPT"
+  printf 'M_PATH=%s\n' "$Q_M_PATH"
+  printf 'BRIEF_FILE=%s\n' "$Q_BRIEF_FILE"
+  printf 'ADAPTER=%s\n' "$Q_ADAPTER"
+  printf '%s\n' ''
+  printf '%s\n' '# Read task description from brief file'
+  printf '%s\n' 'if [[ -f "$BRIEF_FILE" ]]; then'
+  printf '%s\n' '  TASK_DESC="$(cat "$BRIEF_FILE")"'
+  printf '%s\n' 'else'
+  printf '%s\n' '  TASK_DESC="(brief file not found)"'
+  printf '%s\n' 'fi'
+  printf '%s\n' ''
+  printf '%s\n' 'cd "$WT_PATH"'
+  printf '%s\n' 'echo "[worker $WORKER_ID] Starting adapter $ADAPTER" | tee -a "$OUTPUT_MD"'
+  printf '%s\n' 'echo "[worker $WORKER_ID] Worktree: $WT_PATH" | tee -a "$OUTPUT_MD"'
+  printf '%s\n' 'echo "[worker $WORKER_ID] Task: $TASK_TYPE - $TASK_DESC" | tee -a "$OUTPUT_MD"'
+  printf '%s\n' 'echo ""'
+  printf '%s\n' ''
+  printf '%s\n' '# Run adapter (pass brief file path instead of task description)'
+  printf '%s\n' 'bash "$ADAPTER_SCRIPT" "$WORKER_ID" "$WT_PATH" "$TASK_TYPE" "$BRIEF_FILE" "$OUTPUT_MD" "$M_PATH"'
+  printf '%s\n' 'EXIT_CODE=$?'
+  printf '%s\n' 'echo ""'
+  printf '%s\n' 'echo "[worker $WORKER_ID] Adapter exited with code $EXIT_CODE"'
+  printf '%s\n' ''
+  printf '%s\n' 'if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED\|STATUS: NEEDS_REVIEW" "$OUTPUT_MD" 2>/dev/null; then'
+  printf '%s\n' '  if [ $EXIT_CODE -eq 0 ]; then'
+  printf '%s\n' '    echo "" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "<!-- STATUS: NEEDS_REVIEW -->" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "## Completed but no explicit DONE marker from agent" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "Worker exited cleanly but did not signal completion with <!-- STATUS: DONE --> marker." >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "Manual review required to verify work is complete." >> "$OUTPUT_MD"'
+  printf '%s\n' '  else'
+  printf '%s\n' '    echo "" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "<!-- STATUS: FAILED -->" >> "$OUTPUT_MD"'
+  printf '%s\n' '    echo "## Failed with exit code $EXIT_CODE" >> "$OUTPUT_MD"'
+  printf '%s\n' '  fi'
+  printf '%s\n' 'fi'
+  printf '%s\n' ''
+  printf '%s\n' 'if command -v jq >/dev/null 2>&1; then'
+  printf '%s\n' '  TMP=$(mktemp)'
+  printf '%s\n' '  if grep -q "STATUS: DONE" "$OUTPUT_MD" 2>/dev/null; then'
+  printf '%s\n' '    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '\''.status="DONE" | .updated_at=$ts | .exit_code=0'\'' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"'
+  printf '%s\n' '  elif grep -q "STATUS: FAILED" "$OUTPUT_MD" 2>/dev/null; then'
+  printf '%s\n' '    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ec $EXIT_CODE '\''.status="FAILED" | .updated_at=$ts | .exit_code=$ec'\'' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"'
+  printf '%s\n' '  elif grep -q "STATUS: BLOCKED" "$OUTPUT_MD" 2>/dev/null; then'
+  printf '%s\n' '    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '\''.status="BLOCKED" | .updated_at=$ts'\'' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"'
+  printf '%s\n' '  elif grep -q "STATUS: NEEDS_REVIEW" "$OUTPUT_MD" 2>/dev/null; then'
+  printf '%s\n' '    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '\''.status="NEEDS_REVIEW" | .updated_at=$ts'\'' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"'
+  printf '%s\n' '  fi'
+  printf '%s\n' 'fi'
+  printf '%s\n' ''
+  printf '%s\n' 'exit $EXIT_CODE'
+} > "$LAUNCH_SH"
 
 chmod +x "$LAUNCH_SH" 2>/dev/null || warn "Failed to chmod +x $LAUNCH_SH"
 

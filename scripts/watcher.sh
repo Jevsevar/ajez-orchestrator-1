@@ -68,21 +68,24 @@ touch "$watcher_log" 2>/dev/null || true
 
 check_output_status() {
   # check_output_status <output.md>
-  # returns DONE|BLOCKED|FAILED|RUNNING
+  # returns DONE|BLOCKED|FAILED|NEEDS_REVIEW|RUNNING
   local out="$1"
   if [[ ! -f "$out" ]]; then
     echo "RUNNING"
     return
   fi
-  # Check last 100 lines for markers (cheap)
+  # Check last 20 lines for markers (to avoid matching documentation in PROMPT.md)
+  # Status markers should be at the end of the file when worker completes
   local tail_content
-  tail_content="$(tail -n 200 "$out" 2>/dev/null || cat "$out")"
+  tail_content="$(tail -n 20 "$out" 2>/dev/null || cat "$out")"
   if echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*DONE"; then
     echo "DONE"
   elif echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*BLOCKED"; then
     echo "BLOCKED"
   elif echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*FAILED"; then
     echo "FAILED"
+  elif echo "$tail_content" | grep -q "<!--[[:space:]]*STATUS:[[:space:]]*NEEDS_REVIEW"; then
+    echo "NEEDS_REVIEW"
   else
     echo "RUNNING"
   fi
@@ -95,6 +98,7 @@ poll_once() {
   local count_done=0
   local count_blocked=0
   local count_failed=0
+  local count_review=0
   local count_pending=0
 
   local manifests
@@ -168,6 +172,9 @@ poll_once() {
         elif [[ "$file_status" == "FAILED" ]]; then
           new_status="FAILED"
           action="output->FAILED"
+        elif [[ "$file_status" == "NEEDS_REVIEW" ]]; then
+          new_status="NEEDS_REVIEW"
+          action="output->NEEDS_REVIEW"
         elif [[ "$status" == "PENDING" ]]; then
           # pending should have moved to spawning after a while? watcher doesn't auto spawn.
           new_status="$status"
@@ -183,33 +190,55 @@ poll_once() {
         fi
         ;;
       RUNNING)
-        # Primary logic: if output says DONE/BLOCKED/FAILED, that wins
+        # Primary logic: if output says DONE/BLOCKED/FAILED/NEEDS_REVIEW, that wins
         if [[ "$file_status" == "DONE" ]]; then
-          new_status="DONE"
-          action="completed"
+          # Validate completion for DONE status
+          if validate_completion "$manifest" 2>/dev/null; then
+            new_status="DONE"
+            action="completed"
+          else
+            new_status="NEEDS_REVIEW"
+            action="DONE but validation failed"
+          fi
         elif [[ "$file_status" == "BLOCKED" ]]; then
           new_status="BLOCKED"
           action="blocked via output"
         elif [[ "$file_status" == "FAILED" ]]; then
           new_status="FAILED"
           action="failed via output"
+        elif [[ "$file_status" == "NEEDS_REVIEW" ]]; then
+          new_status="NEEDS_REVIEW"
+          action="needs review via output"
         else
-          # No marker, check tmux
+          # No marker, check tmux and worker process
           if [[ "$tmux_alive" == "dead" ]]; then
-            # tmux dead but no final marker -> check exit code? Might be clean exit after DONE but watcher missed?
-            # Look for output existence and treat dead as DONE if file indicates auto-complete?
-            # Conservative: FAILED if dead with no DONE
-            if [[ -f "$abs_output" ]] && tail -n 50 "$abs_output" 2>/dev/null | grep -q "Auto-completed"; then
-              new_status="DONE"
-              action="tmux dead but auto-completed"
-            else
+            # tmux dead without explicit marker = FAILED (no more auto-DONE)
+            new_status="FAILED"
+            action="tmux dead without marker -> FAILED"
+          elif [[ -n "$tmux_sess" ]]; then
+            # Tmux is alive, but is the actual worker process alive?
+            if ! is_worker_alive "$tmux_sess" "$worker_id" 2>/dev/null; then
               new_status="FAILED"
-              action="tmux dead -> FAILED"
+              action="worker process dead -> FAILED"
+            else
+              # Worker process is alive, check for staleness
+              if [[ -f "$abs_output" ]]; then
+                local output_mtime
+                output_mtime="$(stat -f %m "$abs_output" 2>/dev/null || stat -c %Y "$abs_output" 2>/dev/null || echo "0")"
+                local current_time
+                current_time="$(date +%s)"
+                local age=$((current_time - output_mtime))
+                
+                if [[ "$age" -gt 240 ]]; then
+                  new_status="BLOCKED"
+                  action="output stale ${age}s -> BLOCKED"
+                fi
+              fi
             fi
           fi
         fi
         ;;
-      DONE|BLOCKED|FAILED)
+      DONE|BLOCKED|FAILED|NEEDS_REVIEW)
         # Terminal, no change
         ;;
       *)
@@ -223,6 +252,7 @@ poll_once() {
       DONE) count_done=$((count_done+1));;
       BLOCKED) count_blocked=$((count_blocked+1));;
       FAILED) count_failed=$((count_failed+1));;
+      NEEDS_REVIEW) count_review=$((count_review+1));;
       PENDING|SPAWNING) count_pending=$((count_pending+1));;
     esac
 
@@ -253,8 +283,44 @@ poll_once() {
 
   done <<< "$manifests"
 
-  echo "--- Summary: total=$count_total running=$count_running pending=$count_pending done=$count_done blocked=$count_blocked failed=$count_failed ---"
-  log_event "WATCHER" "-" "summary total=$count_total running=$count_running pending=$count_pending done=$count_done blocked=$count_blocked failed=$count_failed"
+  echo "--- Summary: total=$count_total running=$count_running pending=$count_pending done=$count_done blocked=$count_blocked failed=$count_failed needs_review=$count_review ---"
+  log_event "WATCHER" "-" "summary total=$count_total running=$count_running pending=$count_pending done=$count_done blocked=$count_blocked failed=$count_failed needs_review=$count_review"
+
+  # Auto-dequeue: if there's room and queued tasks, spawn next
+  QUEUE_FILE="$ORCH_DIR/queue.txt"
+  if [[ -f "$QUEUE_FILE" && -s "$QUEUE_FILE" ]]; then
+    MAX_CONCURRENT_WORKERS="${MAX_CONCURRENT_WORKERS:-5}"
+    if [[ "$count_running" -lt "$MAX_CONCURRENT_WORKERS" ]]; then
+      # Read first queued task
+      QUEUED_LINE=$(head -n1 "$QUEUE_FILE")
+      if [[ -n "$QUEUED_LINE" ]]; then
+        log_event "WATCHER" "-" "auto-dequeue: found queued task, spawning (running=$count_running < max=$MAX_CONCURRENT_WORKERS)"
+        echo "[watcher] Auto-dequeue: spawning next queued task"
+        
+        # Parse the JSON line (simple extraction)
+        # This is a basic parser - for production use jq
+        TASK_TYPE=$(echo "$QUEUED_LINE" | sed -E 's/.*"task_type":"([^"]+)".*/\1/')
+        TASK_DESC=$(echo "$QUEUED_LINE" | sed -E 's/.*"task":"((\\.|[^"\\])*)".*/\1/' | sed 's/\\n/\n/g; s/\\"/"/g; s/\\\\/\\/g')
+        ADAPTER=$(echo "$QUEUED_LINE" | sed -E 's/.*"adapter":"([^"]+)".*/\1/')
+        BASE_BRANCH=$(echo "$QUEUED_LINE" | sed -E 's/.*"base_branch":"([^"]*)".*/\1/')
+        
+        # Remove the queued line
+        tail -n +2 "$QUEUE_FILE" > "$QUEUE_FILE.tmp" 2>/dev/null && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE" || true
+        
+        # Spawn the worker (in background to not block watcher)
+        SPAWN_CMD="$SCRIPT_DIR/spawn-worker.sh --task-type \"$TASK_TYPE\" --task \"$TASK_DESC\" --adapter \"$ADAPTER\""
+        if [[ -n "$BASE_BRANCH" ]]; then
+          SPAWN_CMD="$SPAWN_CMD --base-branch \"$BASE_BRANCH\""
+        fi
+        
+        # Run spawn in background, log output
+        log_event "WATCHER" "-" "auto-dequeue: executing $SPAWN_CMD"
+        bash -c "$SPAWN_CMD" >> "$LOGS_DIR/watcher.log" 2>&1 &
+        
+        echo "[watcher] Auto-dequeue: spawned worker for queued task"
+      fi
+    fi
+  fi
 }
 
 # Main

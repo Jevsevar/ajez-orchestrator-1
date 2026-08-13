@@ -178,12 +178,155 @@ is_tmux_alive() {
   tmux has-session -t "$sess" 2>/dev/null
 }
 
+is_worker_alive() {
+  # is_worker_alive <session_name> <worker_id>
+  # Returns 0 if worker's agent process is alive, 1 otherwise
+  # Checks tmux pane PID and walks child process tree to find known agent processes
+  local sess="$1"
+  local worker_id="${2:-}"
+  
+  if [[ -z "$sess" ]]; then
+    return 1
+  fi
+  
+  # Check if tmux session exists
+  if ! tmux has-session -t "$sess" 2>/dev/null; then
+    return 1
+  fi
+  
+  # Get pane PID
+  local pane_pid
+  pane_pid="$(tmux list-panes -t "$sess" -F "#{pane_pid}" 2>/dev/null | head -n1 || echo "")"
+  
+  if [[ -z "$pane_pid" || "$pane_pid" == "0" ]]; then
+    return 1
+  fi
+  
+  # Check if pane PID is alive
+  if ! kill -0 "$pane_pid" 2>/dev/null; then
+    return 1
+  fi
+  
+  # Walk the process tree to find agent processes
+  # Known agent process names that indicate the worker is actually doing work
+  # Include common shells and interpreters, as well as specific agent tools
+  local agent_patterns="claude|codex|cursor-agent|aider|amp|python|python3|node|bash|sh|zsh|sleep"
+  
+  # Get all descendant PIDs of the pane (including pane PID itself)
+  # Use pgrep to find children recursively
+  local all_pids="$pane_pid"
+  local current_pids="$pane_pid"
+  
+  # Walk up to 5 levels deep to find agent processes
+  for _ in 1 2 3 4 5; do
+    local child_pids=""
+    for pid in $current_pids; do
+      # pgrep -P gets direct children
+      local children
+      children="$(pgrep -P "$pid" 2>/dev/null || true)"
+      if [[ -n "$children" ]]; then
+        child_pids="$child_pids $children"
+        all_pids="$all_pids $children"
+      fi
+    done
+    current_pids="$child_pids"
+    [[ -z "$current_pids" ]] && break
+  done
+  
+  # Check if any of the PIDs in the tree match known agent patterns
+  for pid in $all_pids; do
+    # Check if process exists and get its command
+    local cmd
+    cmd="$(ps -p "$pid" -o comm= 2>/dev/null || echo "")"
+    
+    if [[ -n "$cmd" ]]; then
+      # Check if command matches agent patterns
+      if echo "$cmd" | grep -qE "$agent_patterns"; then
+        # Found an agent process, worker is alive
+        return 0
+      fi
+    fi
+  done
+  
+  # No agent processes found in the tree, worker is dead
+  # Log for debugging
+  if [[ -n "$worker_id" ]]; then
+    log_event "WATCHER" "$worker_id" "is_worker_alive: no agent processes found in tree (pane_pid=$pane_pid, pids=$all_pids)"
+  fi
+  
+  return 1
+}
+
 list_manifests() {
   find "$CREW_DIR" -maxdepth 2 -type f -name "manifest.json" 2>/dev/null | sort
 }
 
 ensure_orch_dirs() {
   mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR"
+}
+
+shell_quote() {
+  # shell_quote <string>
+  # Escape a string for safe use in bash shell commands.
+  # Uses printf %q which handles all special characters properly.
+  # Example: $(shell_quote 'foo "bar" $baz') -> 'foo "bar" $baz' escaped
+  local str="$1"
+  printf '%q' "$str"
+}
+
+validate_completion() {
+  # validate_completion <manifest_path>
+  # Returns 0 if worker output meets minimum requirements, 1 otherwise
+  # For ship tasks: verifies at least one commit on the branch
+  # For scout tasks: verifies output.md is non-empty (>50 bytes)
+  local manifest="$1"
+  if [[ ! -f "$manifest" ]]; then
+    return 1
+  fi
+  
+  local task_type worktree output_path branch
+  task_type="$(get_json_field "$manifest" "task_type" 2>/dev/null || echo "")"
+  worktree="$(get_json_field "$manifest" "worktree_path" 2>/dev/null || echo "")"
+  output_path="$(get_json_field "$manifest" "output_path" 2>/dev/null || echo "")"
+  branch="$(get_json_field "$manifest" "branch" 2>/dev/null || echo "")"
+  
+  # Resolve output path
+  local abs_output=""
+  if [[ -n "$output_path" ]]; then
+    if [[ "$output_path" == /* ]]; then
+      abs_output="$output_path"
+    else
+      abs_output="$ROOT_DIR/$output_path"
+    fi
+  fi
+  if [[ ! -f "$abs_output" ]]; then
+    abs_output="$(dirname "$manifest")/output.md"
+  fi
+  
+  if [[ "$task_type" == "ship" ]]; then
+    # For ship tasks, verify at least one commit on the branch
+    if [[ -n "$worktree" && -d "$worktree" && -n "$branch" ]]; then
+      if git -C "$worktree" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        # Check if branch has commits not on base
+        local commit_count
+        commit_count="$(git -C "$worktree" rev-list --count HEAD 2>/dev/null || echo "0")"
+        if [[ "$commit_count" -gt 0 ]]; then
+          return 0
+        fi
+      fi
+    fi
+    return 1
+  else
+    # For scout tasks, verify output.md is non-empty (>50 bytes)
+    if [[ -f "$abs_output" ]]; then
+      local size
+      size="$(wc -c < "$abs_output" 2>/dev/null || echo "0")"
+      if [[ "$size" -gt 50 ]]; then
+        return 0
+      fi
+    fi
+    return 1
+  fi
 }
 
 # Export
