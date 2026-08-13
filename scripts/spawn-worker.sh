@@ -23,6 +23,12 @@ BASE_BRANCH=""
 DRY_RUN="false"
 ALLOW_DIRTY="false"
 FORCE="false"
+QUEUE="false"
+
+# Max concurrent workers (can be overridden by env var)
+MAX_CONCURRENT_WORKERS="${MAX_CONCURRENT_WORKERS:-5}"
+QUEUE_FILE="$ORCH_DIR/queue.txt"
+STAGGER_DELAY=2  # seconds between spawns in batch mode
 
 # Colors for error clarity (fallback to no color if not tty)
 RED='\033[0;31m'
@@ -51,7 +57,13 @@ Options:
   --allow-dirty  Allow spawning even if git repo has uncommitted changes
   --force        Force overwrite: remove existing worker dir/worktree/branch/session if they exist
   --dry-run      Print what would happen without spawning
+  --queue        If at max workers, queue task instead of refusing
+  --no-stagger   Skip the 2-second delay between batch spawns
   -h, --help     Show this help
+
+Environment:
+  MAX_CONCURRENT_WORKERS  Max parallel workers (default: 5)
+  ORCHESTRATOR_NO_STAGGER Skip stagger delay if set
 
 Lifecycle:
   PENDING -> SPAWNING -> RUNNING -> DONE | BLOCKED | FAILED
@@ -89,6 +101,102 @@ die() {
     log_event "FAIL" "-" "$msg" 2>/dev/null || true
   fi
   exit "$code"
+}
+
+# ---- Concurrency control ----
+
+count_running_workers() {
+  # Count workers in RUNNING or SPAWNING state
+  local count=0
+  local manifests
+  manifests="$(list_manifests 2>/dev/null || true)"
+  
+  if [[ -z "$manifests" ]]; then
+    echo "0"
+    return
+  fi
+  
+  while IFS= read -r manifest; do
+    [[ -z "$manifest" ]] && continue
+    local status
+    status="$(get_json_field "$manifest" "status" 2>/dev/null || echo "")"
+    if [[ "$status" == "RUNNING" || "$status" == "SPAWNING" ]]; then
+      count=$((count + 1))
+    fi
+  done <<< "$manifests"
+  
+  echo "$count"
+}
+
+queue_task() {
+  # Queue a task for later execution
+  # queue_task <task_type> <task_desc> <adapter> <custom_id> <base_branch>
+  local task_type="$1"
+  local task_desc="$2"
+  local adapter="$3"
+  local custom_id="$4"
+  local base_branch="$5"
+  local timestamp
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  
+  # Escape pipes in task description
+  local escaped_desc
+  escaped_desc="${task_desc//|/\\|}"
+  
+  mkdir -p "$(dirname "$QUEUE_FILE")"
+  printf '%s|%s|%s|%s|%s|%s\n' "$timestamp" "$task_type" "$escaped_desc" "$adapter" "$custom_id" "$base_branch" >> "$QUEUE_FILE"
+  
+  info "Task queued (position $(wc -l < "$QUEUE_FILE" | tr -d ' ')):"
+  info "  Type: $task_type"
+  info "  Task: ${task_desc:0:80}..."
+  info "  Queue file: $QUEUE_FILE"
+  info "  Use watcher to auto-dequeue, or run: ./scripts/dequeue.sh"
+}
+
+process_queue() {
+  # Process the next item in the queue if slots available
+  if [[ ! -f "$QUEUE_FILE" || ! -s "$QUEUE_FILE" ]]; then
+    return 0
+  fi
+  
+  local running
+  running="$(count_running_workers)"
+  
+  if [[ "$running" -ge "$MAX_CONCURRENT_WORKERS" ]]; then
+    return 0
+  fi
+  
+  # Read first line from queue
+  local line
+  line="$(head -n1 "$QUEUE_FILE")"
+  
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+  
+  # Remove first line from queue (atomic)
+  local tmp_queue
+  tmp_queue="$(mktemp)"
+  tail -n +2 "$QUEUE_FILE" > "$tmp_queue" 2>/dev/null || true
+  mv "$tmp_queue" "$QUEUE_FILE" 2>/dev/null || rm -f "$tmp_queue"
+  
+  # Parse the queued task
+  # Format: timestamp|task_type|task_desc|adapter|custom_id|base_branch
+  IFS='|' read -r timestamp task_type task_desc adapter custom_id base_branch <<< "$line"
+  
+  # Unescape pipes
+  task_desc="${task_desc//\\|/|}"
+  
+  info "Dequeuing task: $task_type - ${task_desc:0:60}..."
+  log_event "QUEUE" "dequeue" "Processing queued task: $task_type"
+  
+  # Reconstruct command and execute
+  local cmd=("$0" "--task-type" "$task_type" "--task" "$task_desc" "--adapter" "$adapter")
+  [[ -n "$custom_id" ]] && cmd+=("--id" "$custom_id")
+  [[ -n "$base_branch" ]] && cmd+=("--base-branch" "$base_branch")
+  
+  # Execute in background to avoid blocking watcher
+  "${cmd[@]}" &
 }
 
 # ---- Prerequisite checks ----
@@ -317,6 +425,10 @@ while [[ $# -gt 0 ]]; do
       FORCE="true"; shift;;
     --dry-run)
       DRY_RUN="true"; shift;;
+    --queue)
+      QUEUE="true"; shift;;
+    --no-stagger)
+      STAGGER_DELAY=0; shift;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -325,6 +437,11 @@ while [[ $# -gt 0 ]]; do
       exit 1;;
   esac
 done
+
+# Check env var to disable stagger
+if [[ -n "${ORCHESTRATOR_NO_STAGGER:-}" ]]; then
+  STAGGER_DELAY=0
+fi
 
 # ---- Validate required args ----
 if [[ -z "$TASK_TYPE" ]]; then
@@ -370,6 +487,49 @@ if ! mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR" 2>/dev/null; then
 fi
 # Touch log file
 touch "$ORCH_LOG" 2>/dev/null || warn "Cannot touch log $ORCH_LOG (permissions?)"
+
+# Ensure queue file exists
+touch "$QUEUE_FILE" 2>/dev/null || true
+
+# ---- Concurrency check ----
+info "Checking concurrent worker limit (max: $MAX_CONCURRENT_WORKERS)..."
+RUNNING_COUNT="$(count_running_workers)"
+info "Currently running: $RUNNING_COUNT workers"
+
+if [[ "$RUNNING_COUNT" -ge "$MAX_CONCURRENT_WORKERS" ]]; then
+  if [[ "$QUEUE" == "true" ]]; then
+    info "At limit ($RUNNING_COUNT/$MAX_CONCURRENT_WORKERS), queuing task..."
+    queue_task "$TASK_TYPE" "$TASK_DESC" "$ADAPTER" "$CUSTOM_ID" "$BASE_BRANCH"
+    log_event "QUEUE" "spawn" "Task queued due to limit: $TASK_TYPE - ${TASK_DESC:0:60}"
+    exit 0
+  else
+    error "Max concurrent workers reached ($RUNNING_COUNT/$MAX_CONCURRENT_WORKERS)"
+    error ""
+    error "Options:"
+    error "  1. Wait for a worker to finish, then retry"
+    error "  2. Use --queue flag to queue this task"
+    error "  3. Increase limit: MAX_CONCURRENT_WORKERS=10 $0 ..."
+    error "  4. Kill a worker: ./scripts/kill-worker.sh <id>"
+    error ""
+    error "Current running workers:"
+    while IFS= read -r m; do
+      [[ -z "$m" ]] && continue
+      running_id="$(get_json_field "$m" "id" 2>/dev/null || echo "unknown")"
+      running_status="$(get_json_field "$m" "status" 2>/dev/null || echo "unknown")"
+      if [[ "$running_status" == "RUNNING" || "$running_status" == "SPAWNING" ]]; then
+        error "  - $running_id ($running_status)"
+      fi
+    done <<< "$(list_manifests)"
+    die "Refusing to spawn - at concurrency limit" 9
+  fi
+fi
+
+# ---- Stagger delay for batch operations ----
+# Simple stagger to avoid resource contention in batch spawns
+if [[ "$STAGGER_DELAY" -gt 0 ]]; then
+  info "Staggering spawn by ${STAGGER_DELAY}s..."
+  sleep "$STAGGER_DELAY"
+fi
 
 # ---- Generate and sanitize worker ID ----
 if [[ -n "$CUSTOM_ID" ]]; then
@@ -573,46 +733,53 @@ fi
 # ---- Prepare worker output file ----
 OUTPUT_MD="$W_DIR/output.md"
 info "Creating output file $OUTPUT_MD"
-cat > "$OUTPUT_MD" <<EOF
-# Worker Output: $WORKER_ID
 
-- **Task Type:** $TASK_TYPE
-- **Task:** $TASK_DESC
-- **Adapter:** $ADAPTER
-- **Created:** $NOW
-- **Worktree:** $WT_PATH
-- **Branch:** $BRANCH_NAME
-- **Session:** $SESSION_NAME
+# Write brief file first (contains raw task description, avoids shell injection)
+BRIEF_PATH="$W_DIR/brief.md"
+printf '%s' "$TASK_DESC" > "$BRIEF_PATH"
+if [[ ! -f "$BRIEF_PATH" ]]; then
+  update_manifest_status "$M_PATH" "FAILED" 1
+  die "Failed to create brief file $BRIEF_PATH" 5
+fi
 
-## Status: RUNNING
-
-Worker is starting...
-
-## Task Details
-
-> $TASK_DESC
-
-## Instructions for Worker Agent
-
-You are worker **$WORKER_ID**.
-
-- Your worktree is at \`$WT_PATH\`
-- Task type: **$TASK_TYPE**
-- Signal completion by appending status markers to this file (see PROMPT.md for exact syntax):
-  - DONE: append marker for DONE plus section ## Result: <summary>
-  - BLOCKED: append marker for BLOCKED plus ## Blocked: <reason>
-  - FAILED: append marker for FAILED plus ## Failed: <reason>
-  Exact marker syntax is defined in PROMPT.md / CLAUDE_TASK.md in your worktree.
-  Do NOT copy from this output header - read worktree prompt file for precise marker to append.
-
-- For ship tasks, create commits in your worktree.
-- For scout tasks, write findings in this output.md and in worktree if needed.
-
-The orchestrator watches this file via filesystem polling.
-
-## Work Log
-
-EOF
+# Create output.md safely without unquoted heredoc expansion
+{
+  printf '# Worker Output: %s\n\n' "$WORKER_ID"
+  printf '%s\n' "- **Task Type:** $TASK_TYPE"
+  printf '%s\n' "- **Task:**"
+  cat "$BRIEF_PATH"
+  printf '\n'
+  printf '%s\n' "- **Adapter:** $ADAPTER"
+  printf '%s\n' "- **Created:** $NOW"
+  printf '%s\n' "- **Worktree:** $WT_PATH"
+  printf '%s\n' "- **Branch:** $BRANCH_NAME"
+  printf '%s\n' "- **Session:** $SESSION_NAME"
+  printf '\n'
+  printf '## Status: RUNNING\n\n'
+  printf 'Worker is starting...\n\n'
+  printf '## Task Details\n\n'
+  printf '> '
+  # Escape newlines for blockquote
+  sed 's/^/> /' "$BRIEF_PATH"
+  printf '\n'
+  printf '## Instructions for Worker Agent\n\n'
+  printf 'You are worker **%s**.\n\n' "$WORKER_ID"
+  printf '%s\n' "- Your worktree is at \`$WT_PATH\`"
+  printf '%s\n' "- Task type: **$TASK_TYPE**"
+  printf '%s\n' "- Signal completion by appending status markers to this file (see PROMPT.md for exact syntax):"
+  printf '%s\n' "  - DONE: append marker for DONE plus section ## Result: <summary>"
+  printf '%s\n' "  - BLOCKED: append marker for BLOCKED plus ## Blocked: <reason>"
+  printf '%s\n' "  - FAILED: append marker for FAILED plus ## Failed: <reason>"
+  printf '%s\n' "  Exact marker syntax is defined in PROMPT.md / CLAUDE_TASK.md in your worktree."
+  printf '%s\n' "  Do NOT copy from this output header - read worktree prompt file for precise marker to append."
+  printf '\n'
+  printf '%s\n' "- For ship tasks, create commits in your worktree."
+  printf '%s\n' "- For scout tasks, write findings in this output.md and in worktree if needed."
+  printf '\n'
+  printf '%s\n' "The orchestrator watches this file via filesystem polling."
+  printf '\n'
+  printf '## Work Log\n\n'
+} > "$OUTPUT_MD"
 
 if [[ ! -f "$OUTPUT_MD" ]]; then
   update_manifest_status "$M_PATH" "FAILED" 1
@@ -621,17 +788,17 @@ fi
 
 # ---- Create task file for adapter ----
 info "Creating task metadata $W_DIR/task.txt"
-cat > "$W_DIR/task.txt" <<EOF
-TASK_ID=$WORKER_ID
-TASK_TYPE=$TASK_TYPE
-TASK=$TASK_DESC
-WORKTREE=$WT_PATH
-OUTPUT=$OUTPUT_MD
-BRANCH=$BRANCH_NAME
-ADAPTER=$ADAPTER
-BASE_REF=$BASE_REF
-CREATED_AT=$NOW
-EOF
+{
+  printf 'TASK_ID=%s\n' "$WORKER_ID"
+  printf 'TASK_TYPE=%s\n' "$TASK_TYPE"
+  printf 'TASK_BRIEF_PATH=%s\n' "$BRIEF_PATH"
+  printf 'WORKTREE=%s\n' "$WT_PATH"
+  printf 'OUTPUT=%s\n' "$OUTPUT_MD"
+  printf 'BRANCH=%s\n' "$BRANCH_NAME"
+  printf 'ADAPTER=%s\n' "$ADAPTER"
+  printf 'BASE_REF=%s\n' "$BASE_REF"
+  printf 'CREATED_AT=%s\n' "$NOW"
+} > "$W_DIR/task.txt"
 
 # ---- Validate adapter again (redundant safety) ----
 if [[ ! -f "$ADAPTER_SCRIPT" ]]; then
@@ -663,44 +830,74 @@ fi
 # Create launch script
 LAUNCH_SH="$W_DIR/launch.sh"
 info "Creating launch script $LAUNCH_SH"
-cat > "$LAUNCH_SH" <<LAUNCH_EOF
-#!/usr/bin/env bash
-set -e
+
+# Use shell_quote to safely embed paths, and read TASK_DESC from brief file at runtime
+# Use quoted heredoc to prevent any expansion at generation time
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'set -e\n'
+  printf '# Auto-generated launch script for worker %s\n' "$WORKER_ID"
+  printf 'WORKER_ID=%s\n' "$(shell_quote "$WORKER_ID")"
+  printf 'WT_PATH=%s\n' "$(shell_quote "$WT_PATH")"
+  printf 'TASK_TYPE=%s\n' "$(shell_quote "$TASK_TYPE")"
+  printf 'OUTPUT_MD=%s\n' "$(shell_quote "$OUTPUT_MD")"
+  printf 'M_PATH=%s\n' "$(shell_quote "$M_PATH")"
+  printf 'ADAPTER_SCRIPT=%s\n' "$(shell_quote "$ADAPTER_SCRIPT")"
+  printf 'ADAPTER=%s\n' "$(shell_quote "$ADAPTER")"
+  printf 'BRIEF_PATH=%s\n' "$(shell_quote "$BRIEF_PATH")"
+  printf '\n'
+  cat <<'LAUNCH_BODY'
 cd "$WT_PATH"
 echo "[worker $WORKER_ID] Starting adapter $ADAPTER" | tee -a "$OUTPUT_MD"
 echo "[worker $WORKER_ID] Worktree: $WT_PATH" | tee -a "$OUTPUT_MD"
+# Read task description from brief file at runtime to avoid injection
+TASK_DESC=$(cat "$BRIEF_PATH")
 echo "[worker $WORKER_ID] Task: $TASK_TYPE - $TASK_DESC"
 echo ""
 
-# Run adapter
-bash "$ADAPTER_SCRIPT" "$WORKER_ID" "$WT_PATH" "$TASK_TYPE" "$TASK_DESC" "$OUTPUT_MD" "$M_PATH"
-EXIT_CODE=\$?
+# Run adapter - pass brief path instead of raw task description
+bash "$ADAPTER_SCRIPT" "$WORKER_ID" "$WT_PATH" "$TASK_TYPE" "$BRIEF_PATH" "$OUTPUT_MD" "$M_PATH"
+EXIT_CODE=$?
 echo ""
-echo "[worker $WORKER_ID] Adapter exited with code \$EXIT_CODE"
+echo "[worker $WORKER_ID] Adapter exited with code $EXIT_CODE"
 
-if ! grep -q "STATUS: DONE\\|STATUS: BLOCKED\\|STATUS: FAILED" "$OUTPUT_MD" 2>/dev/null; then
-  if [ \$EXIT_CODE -eq 0 ]; then
+if ! grep -q "STATUS: DONE\|STATUS: BLOCKED\|STATUS: FAILED\|STATUS: NEEDS_REVIEW" "$OUTPUT_MD" 2>/dev/null; then
+  if [ $EXIT_CODE -eq 0 ]; then
     echo "" >> "$OUTPUT_MD"
-    echo "<!-- STATUS: DONE -->" >> "$OUTPUT_MD"
-    echo "## Auto-completed with exit code 0" >> "$OUTPUT_MD"
+    echo "<!-- STATUS: NEEDS_REVIEW -->" >> "$OUTPUT_MD"
+    echo "## Completed with exit code 0 but no explicit STATUS marker" >> "$OUTPUT_MD"
+    echo "Worker exited cleanly but did not signal DONE, BLOCKED, or FAILED." >> "$OUTPUT_MD"
+    echo "Marking as NEEDS_REVIEW for manual inspection." >> "$OUTPUT_MD"
   else
     echo "" >> "$OUTPUT_MD"
     echo "<!-- STATUS: FAILED -->" >> "$OUTPUT_MD"
-    echo "## Failed with exit code \$EXIT_CODE" >> "$OUTPUT_MD"
+    echo "## Failed with exit code $EXIT_CODE" >> "$OUTPUT_MD"
   fi
 fi
 
 if command -v jq >/dev/null 2>&1; then
-  TMP=\$(mktemp)
-  if [ \$EXIT_CODE -eq 0 ]; then
-    jq --arg ts "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="DONE" | .updated_at=\$ts | .exit_code=0' "$M_PATH" > "\$TMP" 2>/dev/null && mv "\$TMP" "$M_PATH" || rm -f "\$TMP"
+  TMP=$(mktemp)
+  if grep -q "<!--[[:space:]]*STATUS:[[:space:]]*DONE" "$OUTPUT_MD" 2>/dev/null; then
+    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="DONE" | .updated_at=$ts | .exit_code=0' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
+  elif grep -q "<!--[[:space:]]*STATUS:[[:space:]]*BLOCKED" "$OUTPUT_MD" 2>/dev/null; then
+    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="BLOCKED" | .updated_at=$ts' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
+  elif grep -q "<!--[[:space:]]*STATUS:[[:space:]]*FAILED" "$OUTPUT_MD" 2>/dev/null; then
+    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ec ${EXIT_CODE:-1} '.status="FAILED" | .updated_at=$ts | .exit_code=$ec' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
+  elif grep -q "<!--[[:space:]]*STATUS:[[:space:]]*NEEDS_REVIEW" "$OUTPUT_MD" 2>/dev/null; then
+    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="NEEDS_REVIEW" | .updated_at=$ts | .exit_code=0' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
   else
-    jq --arg ts "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ec \$EXIT_CODE '.status="FAILED" | .updated_at=\$ts | .exit_code=\$ec' "$M_PATH" > "\$TMP" 2>/dev/null && mv "\$TMP" "$M_PATH" || rm -f "\$TMP"
+    # Fallback: if no marker, use exit code
+    if [ $EXIT_CODE -eq 0 ]; then
+      jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.status="NEEDS_REVIEW" | .updated_at=$ts | .exit_code=0' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
+    else
+      jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ec $EXIT_CODE '.status="FAILED" | .updated_at=$ts | .exit_code=$ec' "$M_PATH" > "$TMP" 2>/dev/null && mv "$TMP" "$M_PATH" || rm -f "$TMP"
+    fi
   fi
 fi
 
-exit \$EXIT_CODE
-LAUNCH_EOF
+exit $EXIT_CODE
+LAUNCH_BODY
+} > "$LAUNCH_SH"
 
 chmod +x "$LAUNCH_SH" 2>/dev/null || warn "Failed to chmod +x $LAUNCH_SH"
 

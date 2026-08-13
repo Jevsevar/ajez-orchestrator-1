@@ -178,12 +178,270 @@ is_tmux_alive() {
   tmux has-session -t "$sess" 2>/dev/null
 }
 
+get_worker_pane_pid() {
+  # get_worker_pane_pid <session_name>
+  # Returns the pane PID for the worker's tmux session
+  local sess="$1"
+  tmux list-panes -t "$sess" -F "#{pane_pid}" 2>/dev/null | head -n1
+}
+
+is_worker_alive() {
+  # is_worker_alive <worker_id> or <session_name>
+  # Checks if the actual agent process is alive by walking the process tree
+  # Returns 0 if alive, 1 if dead
+  # Looks for known agent processes in the descendant tree of the tmux pane
+  local worker_id="$1"
+  local sess
+
+  # If input looks like a session name (starts with crew-), use as-is, else construct
+  if [[ "$worker_id" == crew-* ]]; then
+    sess="$worker_id"
+  else
+    sess="$(tmux_session_name "$worker_id")"
+  fi
+
+  # Get the pane PID
+  local pane_pid
+  pane_pid="$(get_worker_pane_pid "$sess" 2>/dev/null || true)"
+
+  if [[ -z "$pane_pid" ]]; then
+    # No pane PID found, tmux session may be dead or not exist
+    return 1
+  fi
+
+  # Check if pane PID is still alive
+  if ! kill -0 "$pane_pid" 2>/dev/null; then
+    return 1
+  fi
+
+  # Known agent process names to look for (actual workers, not shells)
+  # We exclude bash/sh/zsh/fish because those are just the shell - we want the actual agent
+  local known_agents="claude|codex|cursor-agent|aider|amp|python|python3|node|sleep"
+
+  # Walk the process tree recursively
+  # Get all descendant PIDs of the pane
+  local descendants
+  descendants="$(pgrep -P "$pane_pid" 2>/dev/null || true)"
+
+  # If no direct children, check if pane itself is a worker
+  if [[ -z "$descendants" ]]; then
+    local pane_cmd
+    pane_cmd="$(ps -p "$pane_pid" -o args= 2>/dev/null || true)"
+    local pane_comm
+    pane_comm="$(ps -p "$pane_pid" -o comm= 2>/dev/null | tr -d ' ' || true)"
+    # Check if pane is running a known agent
+    if echo "$pane_comm" | grep -Eq "$known_agents" || echo "$pane_cmd" | grep -Eq "$known_agents"; then
+      return 0
+    fi
+    # If the pane is running bash and has no children, it's idle (zombie or completed)
+    # We consider this "not alive" for a RUNNING worker
+    if echo "$pane_cmd" | grep -q "bash" && ! echo "$pane_cmd" | grep -q "launch.sh"; then
+      return 1
+    fi
+    # If it's running launch.sh, check if that's still active work
+    if echo "$pane_cmd" | grep -q "launch.sh"; then
+      # launch.sh is running but has no children - might be waiting or finished
+      # Consider it alive for now (launch.sh will exit when done)
+      return 0
+    fi
+    return 1
+  fi
+
+  # Recursively collect all descendants
+  local all_pids="$descendants"
+  local current_level="$descendants"
+  local max_depth=10
+  local depth=0
+
+  while [[ -n "$current_level" && $depth -lt $max_depth ]]; do
+    local next_level=""
+    for pid in $current_level; do
+      local children
+      children="$(pgrep -P "$pid" 2>/dev/null || true)"
+      if [[ -n "$children" ]]; then
+        next_level="$next_level $children"
+        all_pids="$all_pids $children"
+      fi
+    done
+    current_level="$(echo "$next_level" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs 2>/dev/null || true)"
+    depth=$((depth + 1))
+  done
+
+  # Check if any descendant is a known agent process OR launch.sh
+  for pid in $all_pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      local cmd
+      cmd="$(ps -p "$pid" -o comm= 2>/dev/null | tr -d ' ' || true)"
+      # Also check full command line for agents that might show as different process names
+      local cmdline
+      cmdline="$(ps -p "$pid" -o args= 2>/dev/null | head -c 200 || true)"
+
+      if echo "$cmd" | grep -Eq "$known_agents" || \
+         echo "$cmdline" | grep -Eq "(claude|codex|cursor-agent|aider|amp|launch\.sh|adapter)" ; then
+        return 0
+      fi
+    fi
+  done
+
+  # Check the pane process itself as well (for launch.sh running directly)
+  local pane_cmdline
+  pane_cmdline="$(ps -p "$pane_pid" -o args= 2>/dev/null || true)"
+  if echo "$pane_cmdline" | grep -Eq "launch\.sh" ; then
+    return 0
+  fi
+
+  # No known agent processes found in the tree - this is a zombie
+  return 1
+}
+
+get_worker_process_status() {
+  # get_worker_process_status <worker_id>
+  # Returns a descriptive status string about the worker's process state
+  local worker_id="$1"
+  local sess
+  sess="$(tmux_session_name "$worker_id")"
+
+  if ! is_tmux_alive "$sess"; then
+    echo "tmux_dead"
+    return
+  fi
+
+  local pane_pid
+  pane_pid="$(get_worker_pane_pid "$sess" 2>/dev/null || true)"
+
+  if [[ -z "$pane_pid" ]]; then
+    echo "no_pane"
+    return
+  fi
+
+  if ! kill -0 "$pane_pid" 2>/dev/null; then
+    echo "pane_dead"
+    return
+  fi
+
+  if is_worker_alive "$worker_id"; then
+    echo "alive"
+  else
+    echo "zombie"
+  fi
+}
+
 list_manifests() {
   find "$CREW_DIR" -maxdepth 2 -type f -name "manifest.json" 2>/dev/null | sort
 }
 
 ensure_orch_dirs() {
   mkdir -p "$CREW_DIR" "$LOGS_DIR" "$WORKTREES_DIR"
+}
+
+shell_quote() {
+  # Print a bash-escaped version of the argument suitable for reuse in shell code
+  # Uses printf %q which produces $'...' style quoting when needed
+  # Usage: quoted=$(shell_quote "$value")
+  printf '%q' "$1"
+}
+
+validate_completion() {
+  # validate_completion <manifest_path> <output_path> <worktree_path>
+  # Returns 0 if validation passes, 1 if fails, 2 if needs review
+  # For ship tasks: verify at least one commit on the branch
+  # For scout tasks: verify output.md is non-empty (>50 bytes)
+  local manifest="$1"
+  local output_path="$2"
+  local worktree_path="$3"
+
+  if [[ ! -f "$manifest" ]]; then
+    echo "manifest not found" >&2
+    return 1
+  fi
+
+  local task_type
+  task_type="$(get_json_field "$manifest" "task_type" 2>/dev/null || echo "")"
+  local branch
+  branch="$(get_json_field "$manifest" "branch" 2>/dev/null || echo "")"
+
+  case "$task_type" in
+    ship)
+      # For ship tasks, verify there's at least one commit on the crew branch
+      # that is not on the base branch
+      if [[ -z "$branch" || ! -d "$worktree_path/.git" && ! -f "$worktree_path/.git" ]]; then
+        # Not a git worktree or no branch info - can't validate commits
+        # Check if there are any files created/modified as fallback
+        if [[ -d "$worktree_path" ]]; then
+          local file_count
+          file_count="$(find "$worktree_path" -type f ! -name ".git" ! -path "*/.git/*" 2>/dev/null | wc -l | tr -d ' ')"
+          if [[ "$file_count" -gt 2 ]]; then
+            return 0
+          else
+            echo "ship task: no commits found and minimal files in worktree" >&2
+            return 2
+          fi
+        else
+          echo "ship task: worktree not found" >&2
+          return 1
+        fi
+      fi
+
+      # Check for commits on this branch
+      if git -C "$ROOT_DIR" rev-parse --verify "$branch" >/dev/null 2>&1; then
+        local commit_count
+        commit_count="$(git -C "$ROOT_DIR" rev-list --count "$branch" 2>/dev/null || echo "0")"
+        # Get base ref to compare
+        local base_ref
+        base_ref="$(get_json_field "$manifest" "base_ref" 2>/dev/null || echo "HEAD")"
+        local base_count
+        if git -C "$ROOT_DIR" rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+          base_count="$(git -C "$ROOT_DIR" rev-list --count "$base_ref" 2>/dev/null || echo "0")"
+        else
+          base_count="0"
+        fi
+
+        if [[ "$commit_count" -gt "$base_count" ]]; then
+          return 0
+        else
+          echo "ship task: no new commits on branch $branch (commits: $commit_count, base: $base_count)" >&2
+          return 2
+        fi
+      else
+        echo "ship task: branch $branch not found" >&2
+        return 2
+      fi
+      ;;
+    scout)
+      # For scout tasks, verify output.md exists and is non-empty (>50 bytes)
+      if [[ -f "$output_path" ]]; then
+        local size
+        size="$(wc -c < "$output_path" 2>/dev/null || echo "0")"
+        size="${size//[[:space:]]/}"
+        if [[ "$size" -gt 50 ]]; then
+          # Also check it has some actual content beyond the header
+          local content_lines
+          content_lines="$(grep -v "^#" "$output_path" 2>/dev/null | grep -v "^$" | grep -v "^- \*\*" | wc -l | tr -d ' ')"
+          if [[ "$content_lines" -gt 3 ]]; then
+            return 0
+          else
+            echo "scout task: output.md too sparse (only $content_lines content lines)" >&2
+            return 2
+          fi
+        else
+          echo "scout task: output.md too small ($size bytes, need >50)" >&2
+          return 2
+        fi
+      else
+        echo "scout task: output.md not found at $output_path" >&2
+        return 1
+      fi
+      ;;
+    *)
+      # Unknown task type - just check output exists
+      if [[ -f "$output_path" && -s "$output_path" ]]; then
+        return 0
+      else
+        echo "unknown task type: output missing or empty" >&2
+        return 1
+      fi
+      ;;
+  esac
 }
 
 # Export

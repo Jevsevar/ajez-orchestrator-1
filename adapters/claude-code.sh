@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
 # adapters/claude-code.sh - Claude Code terminal adapter
 # Optimized for Claude Code CLI (`claude` command)
-# Contract identical to generic.sh:
-#   adapters/claude-code.sh <worker-id> <worktree_path> <task_type> <task_desc> <output_path> <manifest_path>
+# Contract:
+#   adapters/claude-code.sh <worker-id> <worktree_path> <task_type> <brief_path> <output_path> <manifest_path>
+#   brief_path is a file containing the task description (avoids shell injection)
 
 set -euo pipefail
 
 WORKER_ID="${1:-unknown}"
 WORKTREE_PATH="${2:-$(pwd)}"
 TASK_TYPE="${3:-ship}"
-TASK_DESC="${4:-No task provided}"
+BRIEF_PATH="${4:-}"
 OUTPUT_PATH="${5:-$WORKTREE_PATH/../output.md}"
 MANIFEST_PATH="${6:-}"
+
+# Read task description from brief file if provided, else fallback
+if [[ -n "$BRIEF_PATH" && -f "$BRIEF_PATH" ]]; then
+  TASK_DESC="$(cat "$BRIEF_PATH")"
+else
+  TASK_DESC="$BRIEF_PATH"
+  BRIEF_PATH=""
+fi
+TASK_DESC="${TASK_DESC:-No task provided}"
 
 log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
@@ -140,7 +150,12 @@ if ! command -v claude >/dev/null 2>&1; then
   log_to_output "  - Ensure 'claude' is in PATH"
   log_to_output ""
   # Fallback to generic placeholder logic but with claude task file
-  bash "$(dirname "${BASH_SOURCE[0]}")/generic.sh" "$WORKER_ID" "$WORKTREE_PATH" "$TASK_TYPE" "$TASK_DESC" "$OUTPUT_PATH" "$MANIFEST_PATH"
+  # Pass BRIEF_PATH if available, else TASK_DESC for backward compat
+  if [[ -n "$BRIEF_PATH" && -f "$BRIEF_PATH" ]]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/generic.sh" "$WORKER_ID" "$WORKTREE_PATH" "$TASK_TYPE" "$BRIEF_PATH" "$OUTPUT_PATH" "$MANIFEST_PATH"
+  else
+    bash "$(dirname "${BASH_SOURCE[0]}")/generic.sh" "$WORKER_ID" "$WORKTREE_PATH" "$TASK_TYPE" "$TASK_DESC" "$OUTPUT_PATH" "$MANIFEST_PATH"
+  fi
   exit $?
 fi
 

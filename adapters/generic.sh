@@ -2,16 +2,27 @@
 # adapters/generic.sh - Generic terminal coding agent adapter
 # Works with ANY terminal-based agent (or human).
 # Contract:
-#   generic.sh <worker-id> <worktree_path> <task_type> <task_desc> <output_path> <manifest_path>
+#   generic.sh <worker-id> <worktree_path> <task_type> <brief_path> <output_path> <manifest_path>
+#   brief_path is a file containing the task description (avoids shell injection)
 
 set -euo pipefail
 
 WORKER_ID="${1:-unknown}"
 WORKTREE_PATH="${2:-$(pwd)}"
 TASK_TYPE="${3:-ship}"
-TASK_DESC="${4:-No task provided}"
+BRIEF_PATH="${4:-}"
 OUTPUT_PATH="${5:-$WORKTREE_PATH/../output.md}"
 MANIFEST_PATH="${6:-}"
+
+# Read task description from brief file if provided, else fallback to legacy positional arg
+if [[ -n "$BRIEF_PATH" && -f "$BRIEF_PATH" ]]; then
+  TASK_DESC="$(cat "$BRIEF_PATH")"
+else
+  # Fallback for backward compatibility: treat $4 as task desc if not a file
+  TASK_DESC="$BRIEF_PATH"
+  BRIEF_PATH=""
+fi
+TASK_DESC="${TASK_DESC:-No task provided}"
 
 log_to_output() {
   echo "$@" | tee -a "$OUTPUT_PATH"
@@ -153,9 +164,9 @@ run_placeholder() {
       cd "$WORKTREE_PATH" 2>/dev/null || exit 0
       echo "# Worker $WORKER_ID" > "WORKER_${WORKER_ID}.md"
       echo "" >> "WORKER_${WORKER_ID}.md"
-      echo "Task: $TASK_DESC" >> "WORKER_${WORKER_ID}.md"
-      echo "Type: $TASK_TYPE" >> "WORKER_${WORKER_ID}.md"
-      echo "Created: $(date -u)" >> "WORKER_${WORKER_ID}.md"
+      printf 'Task: %s\n' "$TASK_DESC" >> "WORKER_${WORKER_ID}.md"
+      printf 'Type: %s\n' "$TASK_TYPE" >> "WORKER_${WORKER_ID}.md"
+      printf 'Created: %s\n' "$(date -u)" >> "WORKER_${WORKER_ID}.md"
       echo "" >> "WORKER_${WORKER_ID}.md"
       echo "This is placeholder file created by generic adapter." >> "WORKER_${WORKER_ID}.md"
       echo "In production, replace with real code changes." >> "WORKER_${WORKER_ID}.md"
@@ -163,13 +174,18 @@ run_placeholder() {
         git add "WORKER_${WORKER_ID}.md" 2>/dev/null || true
         git config user.email "crew@generic.adapter" 2>/dev/null || true
         git config user.name "Generic Crew Worker $WORKER_ID" 2>/dev/null || true
-        git commit -m "crew($WORKER_ID): $TASK_DESC
-
-Task-Type: $TASK_TYPE
-Worker: $WORKER_ID
-Adapter: generic
-
-Placeholder commit to demo ship flow." 2>&1 | tee -a "$OUTPUT_PATH" || true
+        # Write commit message to file to avoid shell injection via TASK_DESC
+        COMMIT_MSG_FILE=$(mktemp)
+        {
+          printf 'crew(%s): ' "$WORKER_ID"
+          cat "$BRIEF_PATH" 2>/dev/null || printf '%s' "$TASK_DESC"
+          printf '\n\nTask-Type: %s\n' "$TASK_TYPE"
+          printf 'Worker: %s\n' "$WORKER_ID"
+          printf 'Adapter: generic\n\n'
+          printf 'Placeholder commit to demo ship flow.\n'
+        } > "$COMMIT_MSG_FILE"
+        git commit -F "$COMMIT_MSG_FILE" 2>&1 | tee -a "$OUTPUT_PATH" || true
+        rm -f "$COMMIT_MSG_FILE"
       else
         log_to_output "Not in git repo - placeholder file created but not committed"
       fi

@@ -4,13 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-# Simple wrapper around collect-output --list but also shows tmux status
+# Shows tmux status and actual worker process status
 
 echo "Crew workers in $CREW_DIR"
 echo ""
 
-printf "%-32s %-5s %-9s %-7s %-6s %s\n" "ID" "TYPE" "STATUS" "TMUX" "PID" "TASK"
-printf "%-32s %-5s %-9s %-7s %-6s %s\n" "--------------------------------" "-----" "---------" "-------" "------" "----"
+printf "%-32s %-5s %-9s %-7s %-8s %-6s %s\n" "ID" "TYPE" "STATUS" "TMUX" "PROC" "PID" "TASK"
+printf "%-32s %-5s %-9s %-7s %-8s %-6s %s\n" "--------------------------------" "-----" "---------" "-------" "--------" "------" "----"
 
 for m in $(list_manifests); do
   [[ -z "$m" ]] && continue
@@ -21,17 +21,23 @@ for m in $(list_manifests); do
   pid="$(get_json_field "$m" "pid" 2>/dev/null || "-")"
   task="$(get_json_field "$m" "task" 2>/dev/null || "")"
   tmux_state="?"
+  proc_state="?"
   if [[ -n "$tmux_sess" ]]; then
-    if tmux has-session -t "$tmux_sess" 2>/dev/null; then
+    if is_tmux_alive "$tmux_sess"; then
       tmux_state="alive"
+      # Get richer process status
+      proc_state="$(get_worker_process_status "$id" 2>/dev/null || echo "unknown")"
     else
       tmux_state="dead"
+      proc_state="tmux_dead"
     fi
   else
     tmux_state="none"
+    proc_state="none"
   fi
-  short_task="${task:0:50}"
-  printf "%-32s %-5s %-9s %-7s %-6s %s\n" "${id:0:32}" "$type" "$status" "$tmux_state" "$pid" "$short_task"
+  short_task="${task:0:48}"
+  printf "%-32s %-5s %-9s %-7s %-8s %-6s %s\n" "${id:0:32}" "$type" "$status" "$tmux_state" "$proc_state" "$pid" "$short_task"
 done
 echo ""
+echo "PROC status: alive=zombie check passed, zombie=tmux alive but no agent, tmux_dead=session dead"
 echo "Total: $(list_manifests | wc -l | xargs) workers"
